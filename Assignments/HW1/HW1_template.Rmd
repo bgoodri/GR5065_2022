@@ -1,0 +1,42 @@
+---
+title: "GR5065 Homework 1"
+date: "Due February 7, 2022 at 6PM"
+author: "Your Name"
+output: 
+  pdf_document: 
+    number_sections: yes
+---
+
+# Poker
+
+## Probability of rare five-card combinations
+
+## Pre-flop action
+
+## Schwartz's call
+
+## Flop action
+
+## Pre-turn calculation
+
+## Turn
+
+## River action
+
+## Baumann's strategy on the river
+
+# Surnames
+
+## Notation
+
+## Frequentist Perspective
+
+## You
+
+This is a chunk of R code with a unique identifier called `load_data`
+
+```{r, load_data}
+NYS <- readRDS("NYS.rds")
+```
+
+## Granularity
