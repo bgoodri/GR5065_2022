@@ -1,0 +1,362 @@
+---
+title: Discrete Probability Distributions
+author: Ben Goodrich
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{color}
+   - \usepackage{cancel}
+output:
+  ioslides_presentation:
+    widescreen: true
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+</style>
+
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+
+```{r, setup, include = FALSE}
+options(width = 110)
+library(knitr)
+knit_hooks$set(small.mar = function(before, options, envir) {
+    if (before) par(mar = c(4, 4, .1, .1), las = 1)  # smaller margin on top and right
+})
+```
+
+## Variance
+
+- Let $g\left(X\right) = \left(X - \mu\right)^2$ for a discrete random variable, $X$,
+with expectation $\mu$:
+$$\mathbb{E}g\left(X\right) = \sum_{x\in\Omega}\left(x - \mu\right)^2\times\Pr\left(x\right) = \sigma^2 \geq 0$$
+is the VARIANCE of $X$ but the EXPECTATION of the random variable $g$. Since 
+$\left(X-\mu\right)^{2} = X^2 - 2X\mu + \mu^2$, we can rewrite the variance of $X$ as
+$$\sigma^2 = \sum_{x\in\Omega}\left(x^2 - 2x\mu + \mu^2\right)\times\Pr\left(x\right) \\
+= \sum_{x\in\Omega}x^2 \times \Pr\left(x\right) - 2\mu\sum_{x\in\Omega}x \times \Pr\left(x\right) +
+  \mu^2 \sum_{x\in\Omega} \Pr\left(x\right) \\
+= \mathbb{E}\left[X^2\right] - 2\mu^2 + \mu^2 = \mathbb{E}\left[X^2\right] - \mu^2$$
+- $\sigma = \sqrt[+]{\sigma^{2}}$ is the STANDARD DEVIATION of $X$
+
+## Covariance and Correlation between Two RVs
+
+- If $g\left(X,Y\right)=\left(X-\mu_X\right)\left(Y-\mu_Y\right)$, COVARIANCE of $X$
+and $Y$ is defined as
+$$\mathbb{E}g\left(X,Y\right) = 
+\sum_{x\in\Omega_X}\sum_{y\in\Omega_Y}\left(x - \mu_X\right)\left(y - \mu_Y\right)\Pr\left(x \bigcap y\right)
+= \mathbb{E}\left[XY\right] - \mu_X \mu_Y$$ 
+- If $g\left(X,Y\right)=\frac{X-\mu_X}{\sigma_X}\times\frac{Y-\mu_Y}{\sigma_Y}$,
+CORRELATION of $X$ and $Y$ is defined as
+$$\mathbb{E}g\left(X,Y\right) =
+\sum_{x\in\Omega_X}\sum_{y\in\Omega_Y}\frac{x - \mu_X}{\sigma_X}
+\frac{y - \mu_Y}{\sigma_Y}\Pr\left(x \bigcap y\right) =\\
+\frac{1}{\sigma_X \sigma_Y}
+\sum_{x\in\Omega_X}\sum_{y\in\Omega_Y}\left(x - \mu_X\right)\left(y - \mu_Y\right)
+\Pr\left(x \bigcap y\right) =
+\frac{\mathrm{Cov}\left(X,Y\right)}{\sigma_X \sigma_Y} = \rho$$
+- Covariance and correlation measure linear dependence (only). The correlation
+is unit-free and $-1 \leq \rho \leq 1$,
+but is $\rho\gtreqqless0$ for two rolls in bowling?
+
+## Bernoulli Distribution
+
+> - The Bernoulli distribution over $\Omega=\left\{ 0,1\right\}$ depends on a
+  possibly unknown probability parameter $\pi \in \left[0,1\right]$ (not $3.14159\dots$)
+> - The probability that $x = 1$ ("success") is $\pi$ and the probability that 
+  $x = 0$ ("failure") is $1 - \pi$
+> - Can write as a Probability Mass Function (PMF) $\Pr\left(x \mid \pi\right)=\pi^{x}\left(1-\pi\right)^{1-x}$
+> - What is the expectation of $X$?
+> - What is the variance of $X$?
+> - You could write a model where $\pi$ is a function of predictors for each observation, 
+  as in $\pi\left(z\right) = \frac{1}{1+e^{-\alpha - \beta z}}$ for a logit model with predictor $z$
+  and then estimate the intercept, $\alpha$, and slope, $\beta$, using Bayes' Rule (in Week04)
+
+## Binomial Distribution
+
+> - A Binomial random variable can be defined as the sum of $n$
+INDEPENDENT Bernoulli random variables all with the same $\pi$. What is $\Omega$ in this case?
+> - What is an expression for the expectation of a Binomial random variable?
+> - What is an expression for the variance of a Binomial random variable?
+> - What is an expression for $\Pr\left(x \mid \pi,n=3\right)$? Hint: 8 cases to consider
+    * All succeed, $\pi^3$ or all fail, $\left(1 - \pi\right)^3$
+    * 1 succeeds and 2 fail $\pi^1 \left(1-\pi\right)^{3 - 1}$
+      but there are 3 ways that could happen
+    * 2 succeed and 1 fails $\pi^2 \left(1-\pi\right)^{3 - 2}$
+      but there are 3 ways that could happen
+    * In general, $\Pr\left(x \mid n,\pi\right)={n \choose x}\pi^{x} \left(1-\pi\right)^{n-x} = 
+      \frac{n!}{\left(n - x\right)!x!} \pi^{x} \left(1-\pi\right)^{n-x}$
+
+## Back to Bowling Questions
+
+> - Why is the binomial distribution with $n = 10$ inappropriate for the first roll of a frame of bowling?
+> - Could the Bernoulli distribution be used for success in getting a strike?
+> - Could the Bernoulli distribution be used for the probability of knocking over the frontmost pin?
+> - If $X_i = \mathbb{I}\{\mbox{pin i is knocked down}\}$ and $\pi_i$ is the
+  probability in the $i$-th Bernoulli distribution, which could be a function of
+  other pins, what conceptually is
+$$\Pr\left(x_1 \mid \pi_1\right)\prod_{i=2}^{10}
+  \Pr\left(x_i \mid \pi_i\left(X_1=x_1,X_2=x_2,\dots,X_{i-1}=x_{i-1}\right)\right)?$$
+
+## Poisson Distribution for Counts
+
+- Let $n\uparrow \infty$ and let $\pi \downarrow 0$ such that $\mu = n\pi$ remains fixed and finite. 
+What is the limit of the binomial PMF, $\Pr\left(x \mid n,\pi\right)={n \choose x}\pi^{x} \left(1-\pi\right)^{n-x}$?
+  
+    > - ${n \choose x}\pi^{x} = \frac{n!}{x!\left(n - x\right)!} \frac{\mu^x}{n^x} = 
+      \frac{n \times \left(n - 1\right) \times \left(n - 2\right) \times \dots \times \left(n - x + 1\right)} 
+      {n^x} \frac{\mu^x}{x!} \rightarrow 1 \times \frac{\mu^x}{x!}$
+    > - $\left(1-\pi\right)^{n-x} = \left(1-\frac{\mu}{n}\right)^{n-x} = 
+      \left(1-\frac{\mu}{n}\right)^n \times \left(1-\frac{\mu}{n}\right)^{-x} \rightarrow
+      e^{-\mu} \times 1$
+    > - Thus, the limiting PMF is $\Pr\left(x \mid \mu\right) = \frac{\mu^xe^{-\mu}}{x!}$, which is the 
+      PMF of the Poisson distribution over $\Omega = \{0,\mathbb{Z}_+\}$
+
+> - What is the variance of a Poisson random variable?
+
+## Parameterized Bowling Probabilities {.build}
+
+- This is a bit artificial because parameters are usually continuous (see Week04)
+- Let $\Pr\left(x \mid n, \Upsilon\right) = \frac{\log_{n + 2 + \Upsilon}\left(1 + \frac{1}{n + 1 + \Upsilon - x}\right)}{1 - \log_{n + 2 + \Upsilon}\left(1 + \Upsilon\right)}$ where
+  $\Upsilon \in \{0,\mathbb{Z}_+\}$ is a parameter
+```{r, comment = ""}
+Pr <- function(x, n = 10, Upsilon = 0) {
+  b <- n + 2 + Upsilon
+  ifelse(x > n, 0, log(1 + 1 / (n + 1 + Upsilon - x), b)) / (1 - log(1 + Upsilon, b))
+}
+Omega <- 0:10
+names(Omega) <- as.character(Omega)
+# can define all of the above via source("bowling.R") if Week03 is your working directory
+round(t(sapply(c(`0` = 0, `1` = 1, `9` = 9), FUN = Pr, x = Omega, n = 10)), digits = 5)
+```
+
+## How to Think about (a prior on) $\Upsilon$
+
+```{r, Upsilon, echo = FALSE, small.mar = TRUE, fig.width=10, fig.height=5}
+plot(1:999, Omega %*% sapply(1:999, FUN = Pr, x = Omega, n = 10), type = "p", log = "x",
+     ylab = expression(paste("Conditional expectation of first roll given", Upsilon)),
+     xlab = expression(paste(Upsilon, "(log scale)")), las = 2, pch = 20,
+     xlim = c(1, 999), ylim = c(5, 7))
+points(4 / 5, sum(Omega * Pr(Omega)), pch = 20)
+segments(x0 = 9, y0 = 0, y1 = 5.67, col = 2, lty = 2)
+segments(x0 = .Machine$double.eps, y0 = 5.67, x1 = 9, col = 2, lty = 2)
+```
+
+## Joint Probability of $\Upsilon$ and $X_1$ {.smaller .build}
+
+- If you going to collect a realization of the first roll of a frame of bowling,
+  what is $\Pr\left(\Upsilon \bigcap x_1  \mid \mu, n = 10\right)$
+  under a Poisson prior on $\Upsilon$ with, e.g., $\mu = 8.5$?
+```{r}
+mu <- 8.5
+Upsilon <- 0:999 # practically infinite, at least relative to mu
+joint_Pr <- matrix(NA, nrow = length(Upsilon), ncol = length(Omega), dimnames = list(Upsilon, Omega))
+# dpois() evaluates the Poisson PMF with expectation mu: mu^y * exp(-mu) / factorial(y)
+for (y in Upsilon) joint_Pr[y + 1, ] <- dpois(y, mu) * Pr(Omega, n = 10, Upsilon = y)
+round(joint_Pr, digits = 6) # can View(joint_Pr) in RStudio to see more rows
+```
+
+## Marginal Probability of $X_1$ {.build}
+
+> - What are the dimensions of `joint_Pr` and the value of `sum(joint_Pr)`?
+```{r}
+dim(joint_Pr); sum(joint_Pr)
+```
+> - How do we obtain $\Pr\left(\bcancel{\Upsilon} \bigcap x_1 \mid \mu = 8.5, n = 10\right)$?
+```{r}
+marginal_Pr <- colSums(joint_Pr)
+round(marginal_Pr, digits = 5)
+```
+
+## What is $\Pr\left(\Upsilon \mid \mu = 8.5, n = 10, x_1 = 7\right)$?
+
+```{r, eval = FALSE, message = FALSE}
+library(dplyr)
+library(ggplot2)
+S <- 10^7 # practically infinite
+tibble(Upsilon = rpois(S, mu)) %>% # draw S times from a Poisson with expectation mu
+  group_by(Upsilon) %>%
+  mutate(x_1 = sample(Omega, size = n(), replace = TRUE, 
+                      prob = Pr(Omega, n = 10, first(Upsilon)))) %>%
+  ungroup %>%
+  filter(x_1 == 7) %>%
+  count(Upsilon, name = "simulated") %>%
+  mutate(simulated = simulated / sum(simulated), # close to exact for finite S
+         exact = joint_Pr[Upsilon + 1, "7"] / marginal_Pr["7"]) %>%
+  ggplot(mapping = aes(x = Upsilon, y = simulated)) + geom_col() +            # posterior
+  stat_function(geom = "point", color = "red", fun = ~dpois(round(.x), mu)) + # prior
+  ylim(0, 0.14)
+# plot on next slide
+```
+
+## Simulated $\Pr\left(\Upsilon \mid \mu = 8.5, n = 10, x_1 = 7\right)$
+
+```{r, echo = FALSE, message = FALSE, fig.width=10, fig.height=5}
+library(dplyr)
+library(ggplot2)
+S <- 10^7 # practically infinite
+tibble(Upsilon = rpois(S, mu)) %>% # draw S times from a Poisson with expectation mu
+  group_by(Upsilon) %>%
+  mutate(x_1 = sample(Omega, size = n(), replace = TRUE, 
+                      prob = Pr(Omega, n = 10, first(Upsilon)))) %>%
+  ungroup %>%
+  filter(x_1 == 7) %>%
+  count(Upsilon, name = "simulated") %>%
+  mutate(simulated = simulated / sum(simulated), # close to exact for finite S
+         exact = joint_Pr[Upsilon + 1, "7"] / marginal_Pr["7"]) %>%
+  ggplot(mapping = aes(x = Upsilon, y = simulated)) + geom_col() +            # posterior
+  stat_function(geom = "point", color = "red", fun = ~dpois(round(.x), mu)) + # prior
+  ylim(0, 0.14)
+```
+
+## Joint Probability of $\Upsilon$, $X_1$, and $X_2$ $\mid \mu = 8.5$ {.build}
+
+```{r, joint_Pr_frame}
+joint_Pr_frame <- array(NA, dim = c(length(Upsilon), length(Omega), length(Omega)),
+                        dimnames = list(Upsilon, Omega, Omega))
+for (y in Upsilon) {
+  prior <- dpois(y, mu) # scalar
+  cPr_x_1 <- Pr(Omega, n = 10, Upsilon = y) # vector of size 11
+  cPr_x_2 <- t(sapply(Omega, FUN = function(x_1) { # 11x11 matrix
+    Pr(Omega, n = 10 - x_1, Upsilon = y)
+  }))
+  joint_Pr_frame[y + 1, , ] <- prior * cPr_x_1 * cPr_x_2 # elementwise multiplication
+} # this is correct but relies on R's recycling conventions
+dim(joint_Pr_frame)
+sum(joint_Pr_frame)
+```
+
+## $\Pr\left(\bcancel{\Upsilon} \bigcap x_1 \bigcap x_2 \mid \mu = 8.5, n = 10\right)$ {.smaller}
+
+```{r}
+marginal_Pr_frame <- apply(joint_Pr_frame, MARGIN = 2:3, FUN = sum) # shown below
+```
+
+```{r, size='footnotesize', echo = FALSE, message = FALSE}
+library(knitr)
+library(kableExtra)
+library(dplyr)
+options("kableExtra.html.bsTable" = TRUE)
+options(scipen = 6)
+options(knitr.kable.NA = "")
+tmp <- as.data.frame(marginal_Pr_frame)
+for (i in 1:ncol(tmp)) 
+  tmp[,i] <- cell_spec(round(tmp[,i], digits = 7), "html", bold = tmp[,i] == 0,
+                       color = ifelse(tmp[,i] == 0, "red", "black"))
+kable(tmp, digits = 6, align = 'c', escape = FALSE) %>%
+    kable_styling("striped", full_width = FALSE)
+```
+
+
+## Posterior Distribution Conditional on One Frame {.build}
+
+> - If $x_1 = 7$ and $x_2 = 2$, what is 
+  $\Pr\left(\Upsilon \mid \mu = 8.5, n = 10, x_1 = 7, x_2 = 2\right)$?
+```{r, small.mar = TRUE, fig.height=3, fig.width=10, warning = FALSE}
+ggplot(tibble(Upsilon,
+              prob = joint_Pr_frame[ , "7", "2"] / marginal_Pr_frame["7", "2"])) +
+  geom_col(aes(x = Upsilon, y = prob)) + xlim(0, 25) + ylim(0, 0.14)
+```
+
+## Bayesian Learning {.build}
+
+> - If we use the posterior PMF, `joint_Pr[ , "7"] / marginal_Pr["7"]`,
+  as a "prior" for the second roll, what is 
+  $\Pr\left(\Upsilon \mid \mu = 8.5, n = 10 - 7, x_2 = 2\right)$?
+```{r, comment = ""}
+prior <- joint_Pr[ , "7"] / marginal_Pr["7"] # = Pr(Upsilon | mu = 8.5, n = 10, x_1 = 7)
+likelihood <- sapply(Upsilon, FUN = Pr, x = 2, n = 10 - 7) # for each value of Upsilon
+numerator <- prior * likelihood
+round(rbind("2 step" = head(numerator, 23) / sum(numerator),
+            "1 leap" = head(joint_Pr_frame[ , "7", "2"], 23) / marginal_Pr_frame["7", "2"],
+            "prior"  = dpois(0:22, mu)), digits = 5)
+```
+
+## Posterior Draws Given that $x_1 = 7$ & $x_2 = 2$ {.columns-2 .smaller}
+
+```{r, message = FALSE}
+tibble(Upsilon = rpois(S, mu)) %>%
+  group_by(Upsilon) %>%
+  
+  filter(7 == # condition on roll 1
+           sample(Omega, 
+                  size = n(),
+                  replace = TRUE,
+                  prob = Pr(Omega, 
+                            n = 10, 
+                            first(Upsilon)))) %>%
+  filter(2 == # condition on roll 2
+           sample(Omega, 
+                  size = n(), 
+                  replace = TRUE,
+                  prob = Pr(Omega, 
+                            n = 10 - 7, 
+                            first(Upsilon)))) %>%
+  ungroup %>%
+  
+  count(Upsilon, name = "simulated") %>%
+  mutate(simulated = simulated / 
+                     sum(simulated),
+         exact = joint_Pr_frame[Upsilon + 1, 
+                                "7", "2"] / 
+                 marginal_Pr_frame["7", "2"]) %>%
+  print(n = 22)
+```
+
+## Posterior Distribution Conditional on One Game {.build}
+
+```{r}
+game <- rbind(
+  `1st` = c(7, 2), `2nd` = c(7, 1), `3rd` = c(10, 0), `4th` = c(5, 3),  `5th` = c(9, 1),
+  `6th` = c(6, 1), `7th` = c(8, 2), `8th` = c(4,  5), `9th` = c(7, 3), `10th` = c(8, 1) )
+log_prior <- dpois(Upsilon, mu, log = TRUE) # use (natural) logs for numerical reasons
+log_likelihood <- sapply(Upsilon, FUN = function(y) {
+  sum(log(Pr(x = game[ , 1], n = 10, Upsilon = y)), 
+      log(Pr(x = game[ , 2], n = 10 - game[ , 1], Upsilon = y)))
+  })
+numerator <- exp(log_prior + log_likelihood) # convert back to probability units
+denominator <- sum(numerator)
+```
+```{r, eval = FALSE}
+ggplot(tibble(Upsilon, 
+              prob = numerator / denominator)) +
+  geom_col(aes(x = Upsilon, y = prob)) + xlim(0, 25) + ylim(0, 0.14) # plot on next slide
+```
+
+## Plot from Previous Slide
+
+```{r, echo = FALSE, fig.width=10, fig.height=5, warning = FALSE}
+ggplot(tibble(Upsilon, 
+              prob = numerator / denominator)) +
+  geom_col(aes(x = Upsilon, y = prob)) + xlim(0, 25) + ylim(0, 0.15)
+```
+
+## Takeaways from Homework 1
+
+- Probability requires discipline and concentration
+- Poker simultaneously combines three perspectives on probability
+
+    - Naive: All non-visible cards have equal probability
+    - Bayesian: A hand is a sequence of decisions
+    - Frequentist: Evaluate a strategy / player over thousands of hands
+    
+- And poker illustrates game theory where players have mixed strategies,
+  where they randomly make one decision with probability $\pi$ and 
+  another decision with probability $1 - \pi$ in the exact same situation
+- What would Fisher say about Selbst's last decision to call?
+- Knowing either that my last name is Goodrich or that I live in Manhattan
+  is sufficient to make it more likely that I am white than any other race,
+  but combined the probability is even higher
+  
