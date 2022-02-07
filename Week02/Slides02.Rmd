@@ -263,15 +263,15 @@ kable(tmp, digits = 5, align = 'c', escape = FALSE) %>%
 ```{r, sims, cache = TRUE, message = FALSE}
 library(dplyr)
 S <- 10^7 # practically infinite
-tibble(x_1 = sample(Omega, size = S, replace = TRUE, prob = Pr(Omega)),
-       x_2 = vapply(x_1, FUN.VALUE = integer(1), FUN = function(x) {
-         # draw from conditional probability distribution given each value of x_1
-         sample(Omega, size = 1, prob = Pr(Omega, n = 10 - x))
-       })) %>%
-filter(x_2 == 4) %>%
-summarize(simulated = mean(x_1 == 3)) %>%
-mutate(exact = joint_Pr["3", "4"] / sum(joint_Pr[ , "4"])) %>%
-print(digits = 4)
+tibble(x_1 = sample(Omega, size = S, replace = TRUE, prob = Pr(Omega))) %>%
+  group_by(x_1) %>% # draw from conditional probability distribution given each value of x_1
+  mutate(x_2 = sample(Omega, size = n(), replace = TRUE, 
+                      prob = Pr(Omega, n = 10 - first(x_1)))) %>%
+  ungroup %>%
+  filter(x_2 == 4) %>%
+  summarize(simulated = mean(x_1 == 3)) %>%
+  mutate(exact = joint_Pr["3", "4"] / sum(joint_Pr[ , "4"])) %>%
+  print(digits = 4)
 ```
 
 ## Bayesian vs Frequentist Probability
