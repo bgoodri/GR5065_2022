@@ -1,0 +1,469 @@
+---
+title: Probability with Continuous Random Variables
+author: Ben Goodrich
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{color}
+   - \usepackage{cancel}
+output:
+  ioslides_presentation:
+    widescreen: true
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+</style>
+
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+
+```{r, setup, include = FALSE}
+options(width = 100)
+library(knitr)
+knit_hooks$set(small.mar = function(before, options, envir) {
+    if (before) par(mar = c(4, 4, .1, .1), las = 1)  # smaller margin on top and right
+})
+```
+
+## Takeaways from Homework 1
+
+- Poker simultaneously combines three perspectives on probability
+
+    - Naive: All non-visible cards have equal probability
+    - Bayesian: A hand is a sequence of decisions
+    - Frequentist: Evaluate a strategy / player over thousands of hands
+    
+- And poker illustrates game theory where players have mixed strategies,
+  where they randomly make one decision with probability $\pi$ and 
+  another decision with probability $1 - \pi$ in the exact same situation
+- What would Fisher say about Selbst's last decision to call?
+- Knowing either that my last name is Goodrich or that I live in Manhattan
+  is sufficient to make it more likely that I am white than any other race,
+  but combined the probability is even higher. For Monica and Abel (and
+  most of you), their last names are so informative that you would get their 
+  race right despite their living in Manhattan.
+
+## Probability and Cumulative Mass Functions
+
+- $\Pr\left(X = x \mid \boldsymbol{\theta}\right)$ is a Probability Mass Function (PMF) 
+over a discrete $\Omega$ that may depend on some parameter(s) $\boldsymbol{\theta}$ and thus the 
+Cumulative Mass Function (CMF) is 
+$\Pr\left(X\leq x \mid \boldsymbol{\theta}\right)=\sum\limits_{i = \min\{\Omega\} }^x\Pr\left(X = i \mid \boldsymbol{\theta}\right)$
+- In bowling, 
+$\Pr\left(X\leq x \mid n, \Upsilon = 0\right) = 1 - \log_{n + 2}\left(1 + n - x\right)$ (simplified)
+```{r}
+source("bowling.R") # defines Pr and Omega as 0:10
+CMF <- 1 - log(10 + 1 - Omega, base = 10 + 2)
+round(rbind(CMF = CMF, PMF = Pr(Omega)), digits = 5)
+```
+- How does `CMF` relate to our PMF:
+$\Pr\left(x \mid n, \Upsilon = 0\right) = \log_{n + 2}\left(1 + \frac{1}{n + 1 - x}\right)$?
+
+## PMF is the Rate of Change in the CMF
+
+```{r, echo=FALSE, fig.height=6,fig.width=9}
+par(mar = c(5,4,0.5,0.5) + .1, las = 1)
+cols <- rainbow(11)
+x <- barplot(CMF, xlab = "Number of pins", ylab = "Probability of knocking down at most x pins", 
+             col = cols, density = 0, border = TRUE)[,1]
+for(i in 0:9) {
+  j <- i + 1L
+  points(x[j], CMF[j], col = cols[j], pch = 20)
+  segments(x[j], CMF[j], x[j + 1L], CMF[j + 1L], col = cols[j], lty = 2)
+}
+abline(h = 1, lty = "dotted")
+points(x[11], 1, col = cols[11], pch = 20)
+```
+
+## Cumulative Density Functions (CDFs) {.build}
+
+- Now $\Omega$ is an interval; e.g. $\Omega=\mathbb{R}$, $\Omega=\mathbb{R}_{+}$,
+$\Omega=\left(a,b\right)$, $\Omega=\left(0,1\right]$, etc.
+- $\Omega$ has an infinite number of points with zero width, so $\Pr\left(X = x\right) \downarrow 0$
+- $\Pr\left(X\leq x\right)$ is called the Cumulative Density Function (CDF) from $\Omega$ to 
+$\left[0,1\right]$
+- No conceptual difference between a CMF and a CDF except emphasis on
+whether $\Omega$ is discrete or continuous so we use 
+$F\left(x \mid \boldsymbol{\theta}\right)$ for both
+
+## From CDF to a Probability Density Function (PDF)
+
+> - $\Pr\left(a<X\leq x\right)=F\left(x \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)$
+as in the discrete case
+> - If $x=a+h$, $\frac{F\left(x \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)}{x-a}=\frac{F\left(a+h \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)}{h}$ is the slope of a line segment
+> - If we then let $h\downarrow0$, $\frac{F\left(a+h \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)}{h}\rightarrow\frac{\partial F\left(a \mid \boldsymbol{\theta}\right)}{\partial a}\equiv f\left(x \mid \boldsymbol{\theta}\right)$
+is still the RATE OF CHANGE in $F\left(x \mid \boldsymbol{\theta}\right)$ at $x$, i.e.
+the slope of the CDF at $x$
+> - The derivative of $F\left(x\right)$ with respect to $x$ is the Probability
+Density Function (PDF) & denoted $f\left(x\right)$, which is always positive because the CDF increases
+> - $f\left(x\right)$ is NOT a probability (it is a probability's slope) but is used like a PMF
+> - Conversely, $F\left(x\mid\theta\right) = \int_{-\infty}^x f\left(x \mid \theta\right)dx$
+  is the area under the PDF up to $x$
+> - Can use WolframAlpha to take [derivatives](https://www.wolframalpha.com/input/?i=partial+derivative)
+  or do (some) [definite integrals](https://www.wolframalpha.com/input/?i=definite+integral) 
+  but Columbia students can and should [download](https://cuit.columbia.edu/content/mathematica) the 
+  full Mathematica for free. Also, you can do symbolic stuff in Python, whether 
+  [locally](https://www.sympy.org/en/index.html) or [online](https://www.sympygamma.com/).
+
+## Correspondence between Discrete & Continuous
+
+Concept  | Discrete $X$ and $Y$  | Continuous $X$, $Y$, and $\theta$ | Comment
+-- | ----- | ---- | -------
+Cumulative      | $F\left(x \mid \theta\right) = \Pr\left(X \leq x \mid \theta\right)$  | $F\left(x \mid \theta\right) = \Pr\left(X \leq x \mid \theta\right)$ | CMF & CDF are the same concept
+Median | $\arg\min_x:F\left(x \mid \theta\right) \geq \frac{1}{2}$ | $F^{-1}\left(\frac{1}{2} \mid \theta\right) = x$ | $F^{-1}\left(p\right)$ is an inverse CDF
+Rate of Change  | $\Pr\left(x \mid \theta \right) = \frac{F\left(x \mid \theta \right) - F\left(x - 1 \mid \theta\right)}{x - \left(x - 1\right)}$  | $f\left(x \mid \theta\right) = \frac{\partial}{\partial x}F\left(x \mid \theta \right)$ | $f$ is a density, not a probability
+Mode | $\arg\max_x \Pr\left(x \mid \theta \right)$ | $\arg\max_x f\left(x \mid \theta\right)$ | Posterior mode is a red herring
+$\mathbb{E}g\left(X \mid \theta\right)$ | $\sum_{x \in \Omega} g\left(x\right) \Pr\left(x \mid \theta\right)$ | $\int_{\Omega} g\left(x\right) f\left(x \mid \theta \right) dx$ | Might not exist in continuous case
+Mult. Rule | $\Pr\left(x \mid \theta \right) \Pr\left(y \mid x, \theta\right)$ | $f\left(x \mid \theta\right) f\left(y \mid x,\theta\right)$ | Independence is a special case
+Bayes Rule | $\frac{\Pr\left(x \bigcap y\right)}{\Pr\left(\bcancel{x} \bigcap y\right)} = \frac{\Pr\left(x\right) \Pr\left(y \mid x\right)}{\sum_{x \in \Omega} \Pr\left(x\right) \Pr\left(y \mid x\right)}$ | $\frac{f\left(\theta \bigcap y\right)}{f\left(\bcancel{\theta} \bigcap y\right)} = \frac{f\left(\theta\right) f\left(y \mid \theta\right)}{\int_{-\infty}^\infty f\left(\theta\right) f\left(y \mid \theta\right)d\theta}$ | But integrals are rarely elementary
+
+## Uniform Distribution
+
+- Standard uniform distribution for $X \in \Omega = \left[0,1\right]$ with CDF $F\left(x\right) = x$
+  and PDF $f\left(x\right) = 1$, so the PDF is just a horizontal line at $1$
+- Can randomly draw from a standard uniform with [hardware](https://en.wikipedia.org/wiki/RDRAND)
+  but `runif` uses pseudo-random software emulation (conditional on `set.seed`) for speed
+- If $\Omega = \left[a,b\right]$, CDF is $F\left(x \mid a,b\right) = \frac{x - a}{b - a}$, PDF is 
+  $f\left(x \mid, a,b\right) = \frac{1}{b - a}$, and draw is `a + (b - a) * runif(n = 1)` or
+  `runif(n = 1, min = a, max = b)`
+- Let $g\left(X\right) = -\ln f\left(x \mid a,b\right)$. The (differential) entropy of $X$ is defined as
+$$\mathbb{E}g\left(X\right) = \int_a^b g\left(x\right) f\left(x \mid a, b\right) = 
+-\int_a^b \ln f\left(x \mid a,b\right) f\left(x \mid a,b\right) dx$$
+and is maximized for continuous RVs on $\Omega = \left[a,b\right]$ by 
+$f\left(x \mid a,b\right) = \frac{1}{b - a}$. So, uniform distribution conveys no
+information about $X$ beyond that $\Omega = \left[a,b\right]$.
+
+## Exponential Distribution
+
+- Can draw from the standard exponential distribution for $X \in \Omega = \mathbb{R}_+$ by
+passing a standard uniform deviate, $p$, through $F^{-1}\left(p\right) = -\ln\left(1 - p\right) = x$
+- $F^{-1}\left(p\right)$ is called a quantile function from $\left[0,1\right]$ to $\Omega$,
+which can be inverted to obtain the CDF. In this case, $F\left(x\right) = 1 - e^{-x} = p$ and thus
+$f\left(x\right) = e^{-x}$.
+- To draw from a general exponential distribution with expectation $\mu > 0$, do
+`mu * qexp(runif(n = 1))` or `rexp(n = 1, rate = 1 / mu)`. In general, $F^{-1}\left(p \mid \mu\right) = 
+-\mu \ln \left(1 - p\right)$, $F\left(x \mid \mu\right) = 1 - e^{-\frac{x}{\mu}}$, $f\left(x \mid \mu\right) = \frac{1}{\mu}e^{-\frac{x}{\mu}}$,
+$$\mu = \mathbb{E}X = \int_0^\infty x \frac{1}{\mu} e^{-\frac{x}{\mu}} dx = 
+\left.-\left(x + \mu\right)e^{-\frac{x}{\mu}}\right|_0^\infty \rightarrow
+0 + \mu$$
+- Let $g\left(X\right) = -\ln f\left(x \mid \mu\right)$. The (differential) entropy of $X$ is defined as
+$\mathbb{E}g\left(X \mid \mu\right)$ and is maximized for continuous RVs on $\Omega = \mathbb{R}_+$ 
+with $\mathbb{E}X = \mu$ when 
+$f\left(x \mid \mu\right) = \frac{1}{\mu}e^{-\frac{x}{\mu}}$ is the exponential PDF.
+
+## Plots for the Standard Exponential Distribution {.columns-2}
+
+```{r, echo = FALSE, fig.width = 5, fig.height = 5}
+par(mfrow = c(2, 2), mar = c(5, 4, 2, 1) + 0.1, las = 1, pty = "s", cex = .7)
+N <- 1001L
+
+curve(pexp(x), from = 0, to = 6, n = N, ylab = "p = 1 - exp(-x)",
+      main = "Cumulative Density Function\npexp(x)", col = "red")
+
+curve(qexp(p), from = 0, to = 1, n = N, ylab = "x = -log(1 - p)", 
+      main = "Quantile Function\nqexp(p)", xname = "p", ylim = c(0, 6), col = "blue")
+
+curve(dexp(x), from = 0, to = 6, n = N, ylab = "dp / dx = exp(-x)",
+      main = "Probability Density Function\ndexp(x)",  col = "black")
+invisible(sapply(ppoints(N) * 6, FUN = function(x) {
+  segments(x0 = x, y0 = 0, y1 = dexp(x), col = "orange")
+}))
+text(6, 0.9, pos = 2, labels = "Orange area is 1", col = "orange")
+curve(dexp(x), from = 0, to = 6, n = N, add = TRUE, col = "black", lwd = 2)
+
+curve(1 / (1 - p), from = 0, to = 1, n = N, ylab = "dx / dp = 1 / (1 - p)",
+      main = "Quantile Density Function\non the log scale", xname = "p", 
+      log = "y", col = "green3")
+invisible(sapply(ppoints(N), FUN = function(p) {
+  segments(x0 = p, y0 = .Machine$double.eps, y1 = 1 / (1 - p), col = "purple")
+}))
+text(.Machine$double.eps, y = 500, pos = 4, 
+     labels = "Purple area is the\ndifferential entropy", col = "purple")
+curve(1 / (1 - p), from = 0, to = 1, n = N, add = TRUE, col = "green3", 
+      xname = "p", lwd = 2)
+```
+
+- Functional forms are specific to the standard exponential distribution but relationships
+  among concepts are general to all continuous RVs
+
+> - Start with the top right plot. A simple algorithm to randomly draw from $\Omega$ a 
+  realization of $x$ is to draw $p$ from a standard uniform, go up to the blue curve, and left
+  to the vertical axis.
+> - Flip the axes to go from blue to red
+> - Red curve has a slope at every point and its slope is the black curve
+> - Substitute $F^{-1}\left(p\right)$ for $x$ in black and take the reciprocal to get green
+
+## Standard Normal Distribution
+
+- Let $\phi\left(x\right) = \frac{e^{-\frac{1}{2}x^2}}{\sqrt{2\pi}}$ and
+$\Phi\left(x\right) = \frac{1}{2} + \phi\left(x\right) \sum_{n = 0}^\infty \frac{x^{2n + 1}}{\left(2n + 1\right)!!}$,
+which involves the odd [double factorial](https://en.wikipedia.org/wiki/Double_factorial) 
+function, and $F^{-1}\left(p\right) = x: \Phi\left(x\right) = p$ is implicit
+- The CDF for the standard normal distribution on $\Omega = \mathbb{R}$ is 
+$F\left(x\right) = \Phi\left(x\right)$ and the PDF is 
+$f\left(x\right) = \phi\left(x\right) = \frac{\partial}{\partial x} \Phi\left(x\right)$, 
+which can be shown fairly easily
+- Can draw from the standard normal distribution by passing a standard uniform variate, $p$, 
+through $F^{-1}\left(p\right)$, which is implemented as `qnorm` in R
+```{r}
+c(set.seed(20220214), direct = rnorm(1), set.seed(20220214), composed = qnorm(runif(1)))
+```
+- Since $\phi\left(x\right)$ is an even function that only depends on $x$ through $x^2$, 
+you can show that
+$\mathbb{E}X = \int_{-\infty}^\infty x \phi\left(x\right) dx = 
+\int_{-\infty}^0 x f\left(x\right) + \int_{0}^\infty x \phi\left(x\right) = 0$
+
+## General (univariate) Normal Distribution
+
+- If $Z$ is distributed standard normal, $X = Z \sigma + \mu$ is distributed normal
+with expectation $\mu$ and standard deviation $\sigma > 0$
+- Can draw from a normal distribution via  `rnorm(n = 1, mu, sigma)` or, equivalently,
+  `qnorm(runif(n = 1)) * sigma + mu`
+- Let $g\left(X\right) = -\ln f\left(x \mid \mu, \sigma\right)$. The (differential) entropy of $X$ is 
+defined as $\mathbb{E}g\left(X \mid \mu, \sigma\right)$ and is maximized for continuous RVs on 
+$\Omega = \mathbb{R}$ with $\mathbb{E}X = \mu$ and $\mathbb{E}\left(X - \mu\right)^2 = \sigma^2$ when 
+$f\left(x \mid \mu, \sigma\right) = 
+\frac{e^{-\frac{1}{2} \left(\frac{x - \mu}{\sigma}\right)^2}}{\sigma \sqrt{2 \pi}}$ is the normal PDF.
+- It may seem as if the normal distribution is very informative, but it conveys the least
+information beyond the fact that it is a real number with expectation $\mu$ and standard
+deviation $\sigma$. Thus, it is easy to move when conditioning on data.
+
+## Different Parameterizations of a Distribution
+
+- The normal PDF can be written in terms of an expectation, $\mu$, and a STANDARD DEVIATION, 
+  $\sigma$: $f\left(x \mid \mu, \sigma\right) = \frac{e^{-\frac{1}{2}\left(\frac{x - \mu}{\sigma}\right)^2}}{\sigma\sqrt{2\pi}}$
+- The normal PDF can be written in terms of an expectation, $\mu$, and a VARIANCE,
+  $\nu = \sigma^2$: $f\left(x \mid \mu, \nu\right) = \frac{e^{-\frac{1}{2\nu}\left(x - \mu\right)^2}}{\sqrt{2\pi\nu}}$
+- The normal PDF can be written in terms of an expectation, $\mu$, and a PRECISION,
+  $\tau = \frac{1}{\nu}$: $f\left(x \mid \mu, \tau\right) = \frac{\sqrt{\tau} e^{-\frac{\tau}{2}\left(x - \mu\right)^2}}{\sqrt{2\pi}}$
+- All three parameterizations imply the same things about $X$. Using $\sigma$ makes the most sense 
+  empirically because it is in the same units as $X$. Using $\nu$ is often convenient for proofs.
+  Using $\tau$ facilitated Bayesian computations before Stan was released in $2011$ and
+  is used in the Lancaster reading for next week.
+
+
+## Bivariate Normal Distribution
+
+If $\Pr\left(X \leq x \bigcap Y \leq y \mid \boldsymbol{\theta}\right) = 
+F\left(x,y\mid\boldsymbol{\theta}\right)$ is a biviariate CDF, then the
+bivariate PDF is
+$\frac{\partial^2}{\partial x \partial y}F\left(x,y\mid\boldsymbol{\theta}\right)$.
+This also generalizes beyond two dimensions. The PDF of the bivariate normal distribution over 
+$\Omega = \mathbb{R}^2$ has five parameters:
+$$f\left(x,y\mid \mu_X,\mu_Y,\sigma_X,\sigma_Y,\rho\right) =\\
+\frac{1}{2\pi\sigma_X\sigma_Y\sqrt{1-\rho^2}}e^{-\frac{1}{2\left(1-\rho^2\right)}
+\left(\left(\frac{x - \mu_X}{\sigma_X}\right)^2 + 
+\left(\frac{y - \mu_Y}{\sigma_Y}\right)^2 - 
+2\rho\frac{x - \mu_X}{\sigma_X}\frac{y - \mu_Y}{\sigma_Y}\right)} = \\
+\frac{1}{\sigma_X\sqrt{2\pi}}e^{-\frac{1}{2}\left(\frac{x - \mu_X}{\sigma_X}\right)^2} \times
+\frac{1}{\color{blue}{\sigma_Y\sqrt{1-\rho^2}}\sqrt{2\pi}}e^{-\frac{1}{2}
+\left(\frac{y - \left(\color{red}{\mu_Y + \frac{\sigma_Y}{\sigma_X}\rho\left(x-\mu_x\right)}\right)}
+{\color{blue}{\sigma_Y\sqrt{1-\rho^2}}}\right)^2},$$ where the first term is a marginal normal PDF and 
+the second is a conditional normal PDF
+w/ parameters $\color{red}{\mu = \mu_Y + \frac{\sigma_Y}{\sigma_X}\rho\left(x-\mu_X\right)}$ &
+$\color{blue}{\sigma = \sigma_Y\sqrt{1-\rho^2}}$.
+
+## Bivariate Normal PDF Visualized {.columns-2}
+
+```{r, webgl = TRUE, echo = TRUE, warning = FALSE, message = FALSE}
+dbinorm <- function(x, y, 
+                    mean_x = 5, 
+                    mean_y = 5, 
+                    sd_x = 1.5, 
+                    sd_y = 1.0, 
+                    rho = 0.5) {
+  beta <- rho * sd_y / sd_x
+  mu_yx <- mean_y + beta * (x - mean_x)
+  sigma_yx <- sd_y * sqrt(1 - rho ^ 2)
+  return( dnorm(x, mean_x, sd_x) * 
+          dnorm(y, mu_yx, sigma_yx) )
+} # does not come with R so define it
+library(rgl)
+persp3d(dbinorm, xlim = c(0, 10), 
+        ylim = c(0, 10), axes = FALSE,
+        alpha = 0.75, col = rainbow,
+        zlab = "density")
+rglwidget()
+```
+
+## Bayes Rule with Normal Distributions {.smaller}
+
+- Suppose $X$ and $Y$ are distributed bivariate normal with parameters $\mu_X,\mu_Y,\sigma_X,\sigma_Y$ and $\rho$. Thus,
+$$f\left(x \mid y, \mu_X,\mu_Y,\sigma_X,\sigma_Y, \rho \right) = 
+\frac{f_X\left(x \mid \mu_X, \sigma_X\right) 
+f_{Y\mid X}\left(y \mid \color{red}{\mu_Y + \frac{\sigma_Y}{\sigma_X}\rho\left(x-\mu_X\right)}, 
+\color{blue}{\sigma_Y\sqrt{1 - \rho^2}}\right)}
+{f\left(\bcancel{x}, y \mid\mu_X,\mu_Y,\sigma_X,\sigma_Y,\rho\right)}$$
+and the marginal PDF of $Y$ is univariate normal (by interchanging $X$ w/ $Y$ on the previous 
+slides) since
+$$f\left(\bcancel{x}, y \mid\mu_X,\mu_Y,\sigma_X,\sigma_Y,\rho\right) =
+\int_{-\infty}^\infty f\left(x, y \mid\mu_X,\mu_Y,\sigma_X,\sigma_Y,\rho\right) dx =
+\frac{e^{-\frac{1}{2}\left(\frac{y - \mu_Y}{\sigma_Y}\right)^2}}{\sigma_Y \sqrt{2 \pi}} = 
+f_Y\left(y \mid \mu_Y, \sigma_Y\right)$$
+- In this very rare case, marginalization can be done analytically, but the area can also be
+obtained via:
+```{r}
+mu_X <- 9.8; sigma_X <- 7.6; mu_Y <- 5.4; sigma_Y <- 3.2; rho <- -0.1; y <- sqrt(5)
+denominator <- integrate(dbinorm, lower = -Inf, upper = Inf, y = y, # uses little trapezoids basically
+                         mean_x = mu_X, mean_y = mu_Y, sd_x = sigma_X, sd_y = sigma_Y, rho = rho)$value
+format(c(exact = dnorm(y, mean = mu_Y, sd = sigma_Y), numeric = denominator), digits = 10)
+```
+
+## Biontech / Pfizer [Analysis](http://skranz.github.io//r/2020/11/11/CovidVaccineBayesian.html) of First Covid Vaccine
+
+- Let $\pi_v$ be the probability of getting covid given that someone is vaccinated (in the Fall of 2020),
+  $\pi_c$ be the probability of getting covid given that someone is not vaccinated,
+  $\theta = \frac{\pi_v}{\pi_v + \pi_c}$,
+  and the "Vaccine Effect" is 
+  $\mbox{VE}\left(\theta\right) = \frac{1 - 2\theta}{1 - \theta} \leq 1$
+- Beta distribution has PDF 
+$f\left(\theta \mid a,b\right) = \frac{\theta^{a - 1}\left(1 - \theta\right)^{b - 1}}
+{\int_0^1 t^{a - 1}\left(1 - t\right)^{b - 1}dt} = 
+\frac{\theta^{a - 1}\left(1 - \theta\right)^{b - 1}}{B\left(a,b\right)}$
+- Prior for $\theta$ was Beta with $a = 0.700102$ and $b = 1$, which was chosen (poorly) so that 
+the VE at $\mathbb{E}\theta = \frac{a}{a + b}$ was about $0.3$ (but it mattered little)
+```{r, fig.show="hide", message = FALSE}
+library(dplyr)
+library(ggplot2)
+a <- 0.700102 
+b <- 1
+ggplot(tibble(theta = rbeta(n = 10^6, shape1 = a, shape2 = b),
+              VE = (1 - 2 * theta) / (1 - theta))) + 
+  geom_density(aes(x = VE)) + xlim(-5, 1) # see next slide
+```
+
+## Implied Prior Distribution of $\mbox{VE}\left(\theta\right)$
+
+```{r, prior, cache = TRUE, fig.width=10, fig.height=5, echo = FALSE, warning = FALSE}
+ggplot(tibble(theta = rbeta(n = 10^7, shape1 = a, shape2 = b),
+              VE = (1 - 2 * theta) / (1 - theta))) + 
+  geom_density(aes(x = VE)) + xlim(-5, 1)
+```
+
+## Deriving a Posterior Distribution of $\theta$ Analytically
+
+- $\Pr\left(y \mid \theta, n\right) = {n \choose y} \theta^y \left(1 - \theta\right)^{n - y}$ is 
+binomial given $\theta$,
+where "success" is getting covid when vaccinated and "failure" is getting covid when unvaccinated
+- $y = 8$ vaccinated people and $n - y = 86$ non-vaccinated people got covid
+
+> - What are their beliefs about $\theta$? ($\propto$ means "proportional to", i.e. the kernel)
+$$f\left(\theta \mid a,b,n,y\right) = \frac{f\left(\theta \mid a,b\right) L\left(\theta;n,y\right)}
+{\int_0^1 f\left(\theta \mid a,b\right) L\left(\theta;n,y\right) d\theta} \propto \\
+\theta^{a - 1} \left(1 - \theta\right)^{b - 1} \theta^{y}\left(1-\theta\right)^{n-y}
+= \theta^{a + y - 1} \left(1 - \theta\right)^{b + n - y - 1} = \theta^{a^\ast - 1} \left(1 - \theta\right)^{b^\ast - 1}$$
+where $a^{\ast}=a+y = 8.700102$ and $b^{\ast}=b+n-y = 87$
+> - $f\left(\theta \mid a^\ast,b^\ast\right)$ has the kernel of a Beta PDF and therefore
+its normalizing constant must be the reciprocal of $B\left(a^\ast,b^\ast\right) =
+\int_0^1 t^{a^\ast - 1} \left(1 - t\right)^{b^\ast - 1} dt$
+
+## Implied Posterior Distribution of $\mbox{VE}\left(\theta\right)$
+
+```{r, fig.width=10, fig.height=4.5, message = FALSE}
+y <- 8; n <- 94; a_star <- a + y; b_star <- b + n - y
+ggplot(tibble(theta = rbeta(n = 10^6, shape1 = a_star, shape2 = b_star),
+              VE = (1 - 2 * theta) / (1 - theta))) + geom_density(aes(x = VE))
+```
+
+## Bowling with a Continuous Inability Parameter
+
+- Last week, we used $\Pr\left(x \mid n, \Upsilon\right) = \frac{\log_{n + 2 + \Upsilon}\left(1 + \frac{1}{n + 1 + \Upsilon - x}\right)}{1 - \log_{n + 2 + \Upsilon}\left(1 + \Upsilon\right)}$
+but this does not actually require that $\Upsilon$ be a non-negative integer
+- Substitute $1 + \Upsilon = \theta$ where $\theta \geq 0$ is continuous
+- We can work backward from $\mathbb{E}X_1 \mid \theta$ to a prior for $\theta$
+```{r, message = FALSE, fig.show="hide"}
+library(scales)
+E <- function(theta) sapply(theta, FUN = function(t) sum(Omega * Pr(Omega, n = 10, t)))
+ggplot() + # Pr(x, n = 10, theta = 1) and Omega were defined above by source("bowling.R")
+  geom_function(fun = ~E(.x)) + # see next slide
+  scale_x_continuous(limits = c(1e-16, 11000), trans  = "log10",
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x))) +
+  ylab("Conditional expectation of first roll given theta") +
+  xlab("theta (log scale)")
+```
+
+## Plot from Previous Slide
+
+```{r, echo = FALSE, fig.width =10, fig.height=5}
+ggplot() +
+  geom_function(fun = ~E(.x)) +
+  scale_x_continuous(limits = c(1e-16, 11000), trans  = "log10",
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x))) +
+  ylab("Conditional expectation of first roll given theta") +
+  xlab("theta (log scale)")
+```
+
+## Marginal Probability of the First Roll in Bowling
+
+- Suppose we utilize a standard exponential prior for $\theta$, which has the MARGINAL PDF
+  $f\left(\theta\right) = e^{-\theta}$ and expectation $\mu = 1$
+- The CONDITIONAL PMF of $X_1 \mid \theta$ is
+  $\Pr\left(x_1 \mid n, \theta\right) = \frac{\log_{n + 1 + \theta}\left(1 + \frac{1}
+  {n + \theta - x_1}\right)}{1 - \log_{n + 1 + \theta}\left(\theta\right)}$
+- The BIVARIATE PDF of $\theta$ and $X_1$ is
+  $f\left(\theta, x_1 \mid n\right) = e^{-\theta} \frac{\log_{n + 1 + \theta}\left(1 + \frac{1}{n + \theta - x_1}\right)}{1 - \log_{n + 1 + \theta}\left(\theta\right)}$
+- The MARGINAL PMF of $X_1$ is
+  $$\Pr\left(x_1 \mid n\right) = f\left(\bcancel{\theta}, x_1 \mid n\right) = 
+  \int_0^\infty e^{-\theta} \frac{\log_{n + 1 + \theta}\left(1 + \frac{1}{n + \theta - x_1}\right)}
+  {1 - \log_{n + 1 + \theta}\left(\theta\right)}d\theta$$ 
+  but we can't obtain the antiderivative to evalute the area
+
+> - The [Risch algorithm](https://en.wikipedia.org/wiki/Risch_algorithm) can tell you
+  if a function has an elementary antiderivative
+  
+## Marginalized Probability of the First Roll {.build}
+
+```{r}
+joint <- function(theta, x_1) dexp(theta) * sapply(theta, FUN = Pr, x = x_1, n = 10)
+```
+```{r, echo = FALSE, fig.width=10, fig.height=3, small.mar = TRUE}
+curve(joint(theta, x = 10), from = 0, to = 3, n = 1001, ylim = c(0.003, 1),
+      xname = "theta", col = 1, ylab = "Joint Density (log scale)", log = "y")
+for (x in 9:3)
+  curve(joint(theta, x), from = 0, to = 3, n = 1001,
+        xname = "theta", col = 11 - x, add = TRUE)
+legend("topright", legend = 10:3, col = 1:8, lty = 1, ncol = 2,
+       title = "x_1 = ", bg = "lightgrey", box.lwd = NA)
+```
+```{r}
+marginal <- integrate(joint, lower = 0, upper = Inf, x_1 = 8)$value
+marginal
+```
+
+## Deterministic Posterior PDF Given $x_1 = 8$
+
+```{r, fig.width=10, fig.height=3.9}
+E <- integrate(function(t) t * joint(t, x = 8) / marginal, lower = 0, upper = Inf)$value
+ggplot() + xlim(0, 5) + xlab("theta") + ylab("Density") + 
+  geom_function(fun = ~dexp(.x), color = "blue") + # prior PDF
+  geom_function(fun = ~joint(.x, x = 8) / marginal, color = "black") + # posterior PDF
+  geom_vline(aes(xintercept = E), color = "red") # posterior expectation
+```
+
+## Simulated Posterior Distribution Given $x_1 = 8$
+
+```{r, sim, cache = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 3.25}
+tibble(theta = rexp(n = 10^6)) %>% # "infinite" draws from standard exponential prior
+  filter(8 == vapply(theta, FUN.VALUE = integer(1), FUN = function(t) 
+    sample(Omega, size = 1, prob = Pr(Omega, n = 10, t)))) %>%
+  ggplot() + xlim(0, 5) + xlab("theta") + ylab("Density") + 
+  geom_function(fun = ~dexp(.x), color = "blue") + # prior PDF (exact)
+  geom_density(aes(x = theta), color = "black")  + # posterior PDF (approximate)
+  geom_vline(aes(xintercept = mean(theta)), color = "red") # posterior mean (approximate)
+```
+
