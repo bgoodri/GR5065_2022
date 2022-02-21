@@ -1,0 +1,452 @@
+---
+title: "Bayesian (and Frequentist) Principles"
+author: Ben Goodrich
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{amssymb}
+   - \usepackage{color}
+   - \usepackage{cancel}
+output:
+  ioslides_presentation:
+    widescreen: yes
+    highlight: pygment
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+</style>
+
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+
+```{r setup, include=FALSE}
+options(width = 90, scipen = 1)
+library(knitr)
+opts_chunk$set(echo = TRUE)
+knit_hooks$set(small.mar = function(before, options, envir) {
+    if (before) par(mar = c(4, 4, .1, .1), las = 1)  # smaller margin on top and right
+})
+```
+
+## Predictive Distributions
+
+- It is at best difficult and usually impossible to derive the denominator of Bayes
+  Rule before seeing the data, e.g.
+  $f\left(\bcancel{\mu} \bigcap I \bigcap P \mid m, s, \sigma_I, \sigma_P, \rho\right) =$
+  $$\int_{-\infty}^\infty f\left(\mu \mid m, s\right) f\left(I \mid \mu, \sigma_I\right)
+  f\left(P \mid 
+  \mu + \frac{\sigma_P}{\sigma_I}\rho\left(I - \mu\right), \sigma\sqrt{1 - \rho^2}\right)d\mu$$
+- But it is easy to draw from this predictive distribution of reported GD$I$ & GD$P$
+```{r, message = FALSE, fig.show='hide'}
+library(ggplot2)
+library(dplyr)
+m <- 5.45; s <- 1.5; sigma <- 7 / 3; rho <- -1 / 10
+# together these are a trivariate random variable; separately they are univariate marginal RVs
+tibble(mu  = rnorm(10^6, mean = m,  sd = s),
+       GDI = rnorm(10^6, mean = mu, sd = sigma),
+       GDP = rnorm(10^6, mean = mu + rho * (GDI - mu), 
+                   sd = sigma * sqrt(1 - rho^2))) %>%
+  ggplot() + geom_bin_2d(aes(x = GDI, y = GDP)) # plot on next slide
+```
+
+## Plot from Previous Slide
+
+```{r, echo = FALSE, fig.width=10, fig.height=5}
+tibble(mu  = rnorm(10^6, mean = m,  sd = s),
+       GDI = rnorm(10^6, mean = mu, sd = sigma),
+       GDP = rnorm(10^6, mean = mu + rho * (GDI - mu), 
+                   sd = sigma * sqrt(1 - rho^2))) %>%
+  ggplot() + geom_bin_2d(aes(x = GDI, y = GDP))
+```
+
+## Prior Predictive Probability for Bowling {.smaller}
+
+$f\left(\bcancel{\theta} \bigcap x_1 \bigcap x_2 \mid m, n = 10\right) =
+\int_0^\infty f\left(\theta \mid m\right) \Pr\left(x_1 \mid n = 10, \theta\right)
+\Pr\left(x_2 \mid n = 10 - x_1, \theta\right) d\theta =$ 
+$\Pr\left(x_1 \bigcap x_2 \mid m, n = 10\right)$, but that area can only be calculated
+by calling `integrate`
+```{r, echo = FALSE}
+source(file.path("..", "Week04", "bowling.R")) # defines Pr and Omega as 0:10
+marginal_Pr <- matrix(0, nrow = 11, ncol = 11, dimnames = list(Omega, Omega))
+for (x_1 in Omega) {
+  for(x_2 in 0:(10 - x_1)) {
+    marginal_Pr[x_1 + 1, x_2 + 1] <- integrate(function(theta) {
+      dexp(theta, rate = 1 / 0.15) *
+        sapply(theta, FUN = function(t) {
+          Pr(x_1, n = 10, theta = t) * Pr(x_2, n = 10 - x_1, theta = t)
+        })
+    }, lower = 0, upper = Inf)$value
+  } 
+}
+```
+```{r, size='footnotesize', echo = FALSE, message = FALSE}
+library(kableExtra)
+options("kableExtra.html.bsTable" = TRUE)
+options(scipen = 6)
+options(knitr.kable.NA = "")
+tmp <- as.data.frame(marginal_Pr)
+for (i in 1:ncol(tmp)) 
+  tmp[,i] <- cell_spec(round(tmp[,i], digits = 7), "html", bold = tmp[,i] == 0,
+                       color = ifelse(tmp[,i] == 0, "red", "black"))
+kable(tmp, digits = 6, align = 'c', escape = FALSE) %>%
+    kable_styling("striped", full_width = FALSE)
+```
+
+## Simulated Prior Predictive Probability for Bowling {.smaller}
+
+```{r, PPD, cache = TRUE, message = FALSE, warning = FALSE}
+tibble(theta = rexp(10^4, rate = 1 / 0.15),
+       x_1 = sapply(theta, FUN = function(t) {
+         sample(Omega, size = 1, prob = Pr(Omega, n = 10, t))
+       })) %>%
+  group_by(x_1) %>%
+  mutate(x_2 = sapply(theta, FUN = function(t) {
+    sample(Omega, size = 1, prob = Pr(Omega, n = 10 - first(x_1), t))
+  })) %>%
+  ungroup %>%
+  with(., table(x_1, x_2)) %>%
+  prop.table %>%
+  round(digits = 6)
+```
+
+## Prior Predictive Distribution for Future Data
+
+- Before the data are observed, i.e. on HW2, the denominator of Bayes Rule
+$$f\left(\bcancel{\theta} \bigcap \mathbf{y} \mid \dots\right) =
+\int_{\Theta} f\left(\theta \mid \dots\right) f\left(\mathbf{y} \mid \theta\right)d\theta$$
+defines a "prior" P{D,M}F for $\mathbf{y}$
+- One way to tell whether your prior distribution for the PARAMETERS, $\theta$, is reasonable 
+  is to judge whether the implied prior predictive distribution for the OUTCOMES is reasonable
+- For example, is a prior probability of a strike that is about $\frac{1}{2}$ reasonable for
+  a woman competing at the World Cup of Bowling? Is it reasonable for a man?
+  
+> - You can draw from the POSTERIOR predictive distribution of future data by repeatedly drawing
+  $\theta$ from is posterior distribution given past data and using those realizations to
+  draw $\widetilde{\mathbf{y}}$ from its conditional distribution given $\theta$
+
+## _Ex Ante_ Probability (Density) of _Ex Post_ Data
+
+A likelihood function is the same expression as a P{D,M}F with 3 distinctions:
+
+1. For the PDF or PMF, $f\left(\left.x\right|\boldsymbol{\theta}\right)$, we think of $X$ as a random variable 
+  and $\boldsymbol{\theta}$ as given, whereas we conceive of the likelihood function, 
+  $\mathcal{L}\left(\boldsymbol{\theta};x\right)$, to be a function of $\boldsymbol{\theta}$ 
+  (in the mathematical sense) evaluted at the OBSERVED data, $x$
+    - As a consequence, $\int\limits _{-\infty}^{\infty}f\left(\left.x\right|\boldsymbol{\theta}\right)dx=1$ or
+$\sum\limits _{x \in\Omega}f\left(\left.x\right|\boldsymbol{\theta}\right)=1$ while 
+$\int_{-\infty}^{\infty}\int_{-\infty}^{\infty}\cdots\int_{-\infty}^{\infty}
+\mathcal{L}\left(\boldsymbol{\theta};x\right)d\theta_{1}d\theta_{2}\ldots d\theta_{K}$ may not exist and is 
+never 1
+2. We often think of “the likelihood function” for $N$ conditionally independent observations, 
+so $\mathcal{L}\left(\boldsymbol{\theta};\mathbf{x}\right)=\prod _{n=1}^{N}\mathcal{L}\left(\boldsymbol{\theta};x_n\right)$
+3. By “the likelihood function”, we often really mean the natural logarithm thereof, a.k.a. the log-likelihood function $\ell\left(\boldsymbol{\theta};\mathbf{x}\right) = \ln\mathcal{L}\left(\boldsymbol{\theta},\mathbf{x}\right)=\sum_{n=1}^{N}
+\ln\mathcal{L}\left(\boldsymbol{\theta};x_n\right)$
+
+## Maximum Likelihood Estimation (MLE) {.build}
+
+- What is the MLE for $\mu$ (often denoted $\widehat{\mu}$) in the third quarter of $2021$, 
+  when GDI growth was $5.8$ and GDP growth was $2.3$?
+```{r, fig.width=10, fig.height=3}
+ggplot() + xlim(0,8) + ylab("Likelihod (log-scale)") + xlab("mu") + 
+  scale_y_continuous(trans = "log") +
+  geom_function(fun = ~dnorm(5.8, mean = .x, sd = sigma) * # function of the mean only
+                       dnorm(2.3, mean = .x + rho * (5.8 - .x), sd = sigma * sqrt(1 - rho^2)))
+```
+  
+## Subtlties of Maximum Likelihood Estimation
+
+- $\widehat{\mu}$ is NOT the most likely value of $\mu$ given that GDI growth was $5.8$ and 
+  GDP growth was $2.3$ because $\mu$ is not a random variable and Frequentist probability
+  does not apply to it (just like Cook's huge odd integer)
+- $\widehat{\mu}$ IS the value of $\mu$ such that the most likely values of the random
+  variables GDI growth and GDP growth are $5.8$ and $2.3$ respectively (so MLEs overfit)
+- Could other values of $\mu$ yield GDI growth of $5.8$ and GDP growth of $2.3$? Yes.
+- Since $\int_{-\infty}^\infty L\left(\mu\right)d\mu \neq 1$, the likelihood function is
+  in arbitrary units (not density), but that does not affect the maximization of it
+- Instead of maximizing $L\left(\mu\right)$, Bayesians divide $L\left(\mu\right)$ by
+  $f\left(\bcancel{\mu} \bigcap I \bigcap P \mid \dots\right)$, which is in the same
+  arbitrary units. Thus, the arbitrary units cancel leaving the posterior PDF in the
+  same units as the prior PDF, which both integrate to $1$ over all possible values of $\mu$.
+
+## Probability Distribution of the MLE
+
+- For Frequentists, $\widehat{\mu} = \arg\max L\left(\mu;\mathbf{y}\right)$ is a 
+  random variable whose distribution is conditioned on $\mu$ (or whatever the
+  parameters are), with PDF
+$$f\left(\widehat{\mu} \mid \mu\right) = 
+f\left(\widehat{\mu} \bigcap \bcancel{\mathbf{y}} \mid \mu\right) =
+\int_{-\infty}^\infty \dots \int_{-\infty}^\infty
+\widehat{\mu}\left(\mathbf{y}\right) f\left(\mathbf{y} \mid \mu\right) dy_1 \dots dy_N$$
+- Thus, the probability distribution of $\widehat{\mu} \mid \mu$ is irrespective
+  of the data but weighted by the PDF $f\left(\mathbf{y} \mid \mu\right)$, which
+  is completely different from Bayesians' prior predictive density but obtained in a similar way
+  $$f\left(\mathbf{y} \mid \dots \right) = f\left(\bcancel{\theta} \bigcap \mathbf{y} \mid \dots \right) =
+  \int_{-\infty}^\infty f\left(\theta \mid \dots\right) f\left(\mathbf{y} \mid \theta\right) d\theta$$
+  
+> - As $N \uparrow \infty$, $f\left(\widehat{\mu} \mid \mu\right) \rightarrow
+  \frac{e^{-\frac{1}{2\nu}\left(\widehat{\mu} -\mu\right)^2}}{\sqrt{2\pi\nu}}$,
+  which is the PDF of a normal distribution with expectation $\mu$ and variance
+  $\nu \propto \frac{1}{N}$, across random samples of size $N$
+
+## Frequentist Analysis with Moderna Trial [Data](https://www.nih.gov/news-events/news-releases/peer-reviewed-report-moderna-covid-19-vaccine-publishes) {.smaller}
+
+- $11$ fully vaccinated people got covid and $185$ placeboed people got covid
+```{r}
+theta_0 <- (0.3 - 1) / (0.3 - 2) # 0.412, implied by a hypothesized VE of 0.3
+binom.test(c(11, 185), p = theta_0, alternative = "less")
+```
+```{r}
+CI_theta_high <- 0.09118634
+CI_VE_low <- (1 - 2 * CI_theta_high) / (1 - CI_theta_high)
+CI_VE_low
+```
+
+## What Is Going On with `binom.test`?
+
+```{r}
+n <- 11 + 185
+p_value <- pbinom(11, size = n, prob = theta_0)           # virtually zero
+CI_theta_high <- qbeta(0.95, shape1 = 11 + 1, shape2 = n) # 0.09118634
+```
+```{r, message = FALSE}
+library(dplyr)
+tibble(y = rbinom(10^6,  size = n, prob = theta_0), # y is random, not theta_0
+       p_val = pbinom(y, size = n, prob = theta_0), # random because y is
+       CI_high = qbeta(0.95, shape = y + 1, shape2 = n - y)) %>% # random because y is
+  summarize(type_I_error = mean(p_val < 0.05),    # simulated but close
+            catch_rate = mean(theta_0 < CI_high)) # simulated but close
+```
+
+* In general, `type_I_error` is at most $0.05$ and `catch_rate`
+  is at least $0.95$, but for continuous test statistics these
+  bounds are usually tight
+
+## Applied Statistics Is Not Actually Frequentist
+
+> - It is objectively, provably true that `pbinom(11, size = n, prob = theta_0)`
+  is the right cumulative probability under its (possibly strong) assumptions
+> - That only becomes relevant under the CONVENTION that we reject the null
+  hypothesis that $\theta = \theta_0$ if and only if that cumulative probability
+  is $< 0.05$
+> - Deciding that $\theta \neq \theta_0$ or even $\theta < \theta_0$ is
+  insufficient for science (or anything else), which needs to know something
+  about what $\theta$ is rather than what it isn't
+> - That only becomes relevant under the CONVENTION that if and only if you reject 
+  the null hypothesis that $\theta = \theta_0$, then you are "allowed" to
+  proceed as if $\theta = \widehat{\theta}$ or to appear more sophisticated,
+  proceed as if
+  $\theta \thicksim \mathcal{N}\left(\widehat{\theta}, SE\left(\widehat{\theta}\right)\right)$.
+  If you fail to reject the null hypothesis that $\theta = \theta_0$,
+  then proceed as if $\theta = \theta_0$
+
+> - None of those conventions are Frequentist, objective, or even good ideas
+
+## More on Confidence Intervals
+
+- Jerzy Neyman, who invented the confidence interval, 
+[said](https://en.wikipedia.org/wiki/Confidence_interval#Interpretation)
+
+> I have repeatedly stated that the frequency of correct results will tend to $\alpha$ [the type I error rate]. Consider now the case when a sample is already drawn, and the calculations have given [particular limits]. Can we say that in this particular case the probability of the true value [falling between these limits] is equal to $\alpha$? The answer is obviously in the negative. The parameter is an unknown constant, and no probability statement concerning its value may be made \dots"
+
+> - So, the FDA's rule that in order to approve a vaccine --- the confidence interval for the VE
+  should exclude $0.3$ --- does not imply there is a $0.95$ probability that the VE is greater
+  than $0.3$ and contradicts how the creator of confidence intervals says they should be used
+
+> - A confidence interval is a range of values such that if the null hypothesis value, $\theta_0$,
+  were anywhere in that interval, you would fail to reject the null hypothesis
+
+## Tips to Avoid Being Confused by Frequentism
+
+> - What is the nature and timing of the randomization? (Often non-existent)
+> - Probability looks forward from the instant before the randomization
+   and conditions on everything previous, including $\boldsymbol{\theta}$,
+   which is weird
+> - Only make probability statements about random variables, such as
+  data, estimators, and test statistics. Do not make probability statements 
+  about constants you conditioned on, such as $\boldsymbol{\theta}$, hypotheses, 
+  and research designs.
+> - Instead of saying "the probability of $A$", say "the proportion
+  of times that $A$ would happen over the (hypothetical) randomizations of $\dots$ "
+> - Instead of saying some estimator is consistent, unbiased, efficient, etc.,
+  insert the definitions. E.g., "The average of $\widehat{\theta}$
+  across random sampled datasets of fixed size $N$ is $\theta$ (unbiased)" or
+  "As $N \uparrow \infty$, the average squared difference between $\theta$
+  and $\widehat{\theta}$ across random sampled datasets diminishes (consistent)".
+> - Frequentist methods deliberately do not produce a distribution of beliefs
+
+## Four Ways to Execute Bayes Rule
+
+1. Utilize conjugacy to analytically integrate the kernel of Bayes Rule
+
+    *  Makes incremental Bayesian learning obvious but is only possible in 
+    [simple models](https://en.wikipedia.org/wiki/Conjugate_prior#Table_of_conjugate_distributions) 
+    when the distribution of the outcome is in the exponential family
+
+2. Numerically integrate the kernel of Bayes Rule over the parameter(s)
+
+    *  Most similar to what we did in the discrete case but is only feasible when 
+    there are very few parameters and can be inaccurate even with only one
+
+3.  Draw from the joint distribution and keep realizations of 
+  the parameters if and only if the realization of the outcome matches the observed data
+  
+    *  Very intuitive what is happening but is only possible with discrete outcomes 
+    and only feasible with few observations and parameters
+
+4. Perform MCMC (via Stan) to randomly draw from the posterior distribution
+
+    *  Works for any posterior PDF that is differentiable w.r.t. the parameters
+
+## (1) Conjugacy
+
+- Prior is a Beta distribution with shape parameters $a > 0$ and $b > 0$, 
+  which has the PDF
+$$f\left(\theta \mid a, b\right) = \frac{\theta^{a - 1}\left(1 - \theta\right)^{b - 1}}
+{B\left(a,b\right)} = 
+\frac{\theta^{a - 1}\left(1 - \theta\right)^{b - 1}}
+{\int_0^1 t^{a - 1}\left(1 - t\right)^{b - 1}dt}$$
+- Likelihood, $L\left(\theta; y, n\right)$ is binomial with $y$ successes in $n$ tries, 
+  which has the same form, ${n \choose y} \theta^y \left(1 - \theta\right)^{n - y}$, 
+  as the prior PDF
+- Posterior is a Beta distribution with shape parameters $a^\ast = a + y$ and
+  $b^\ast = b + n - y$ and normalizing constant $\frac{1}{B\left(a^\ast, b^\ast\right)}$
+- For Biontech / Pfizer from Week04,
+```{r}
+a <- 0.700102; b <- 1; y <- 8; n <- 94; a_star <- a + y; b_star <- b + n - y
+```
+
+## (2) Numerical Integration
+
+- Suppose you did not known the beta prior and binomial likelihood were
+  naturally conjugate
+- You could still calculate the area in the denominator numerically to
+  obtain the posterior PDF, which works in general (with $1$ parameter)
+```{r}
+kernel <- function(theta) { # omits constant choose(n, y) / beta(a, b)
+  theta^(a - 1) * (1 - theta)^(b - 1) * theta^y * (1 - theta)^(n - y)
+}
+constant <- integrate(kernel, lower = 0, upper = 1)$value # scalar, not a function
+format(rbind(exactish = dbeta(0.1, a_star, b_star), 
+             approximate = kernel(0.1) / constant), digits = 9)
+```
+
+## (3) Filter the Joint Distribution using (Discrete) $y$
+
+```{r, message = FALSE}
+filtered <- tibble(theta = rbeta(10^6, a, b)) %>%
+  filter(y == rbinom(n(), size = n, prob = theta))
+rbind(exact = choose(n, y) * beta(a_star, b_star) / beta(a, b), # beta-binomial PMF
+      simulated = nrow(filtered) / 10^6)                        # denominator of Bayes Rule
+rbind(exact = a_star / (a_star + b_star), 
+      simulated = mean(filtered$theta))
+```
+
+## (4) Specify a Posterior in Stan to Draw from
+
+```{stan output.var="mod", eval = FALSE}
+data {
+  int<lower  = 0> n;            // tries
+  int<lower  = 0, upper = n> y; // successes
+  
+  real<lower = 0> a; // a and b are knowns
+  real<lower = 0> b; // so they count as data
+}
+parameters {
+  real<lower = 0, upper = 1> theta; // success probability
+}
+model {
+  // _lp{d,m}f means "logarithm of P{D,M}F" for numerical reasons
+  target += beta_lpdf(theta | a, b) + binomial_lpmf(y | n, theta);
+} // denominator of Bayes Rule is not necessary or utilized to draw
+generated quantities { // of interest, but not part of the kernel
+  real VE = (1 - 2 * theta) / (1 - theta);
+}
+```
+
+## (4) Resulting MCMC Output
+
+```{r}
+post <- rstan::read_stan_csv("post.csv")
+post
+```
+
+## A Better (but incomplete) Stan Program
+
+```{stan output.var="mod", eval = FALSE}
+data {
+  int<lower  = 0> n;            // tries
+  int<lower  = 0, upper = n> y; // successes
+  
+  // more hyperparameters for the prior on VE
+}
+parameters {
+  real<upper = 1> VE;
+}
+transformed parameters {
+  real theta = (VE - 1) / (VE - 2); // implied success probability
+}
+model {
+  target += binomial_lpmf(y | n, theta);
+  target += // some prior on VE
+}
+```
+
+## Principles to Choose Priors With
+
+1. Do not use improper priors (those that do not integrate to $1$)
+2. Subjective, including "weakly informative" priors
+3. Entropy Maximization
+4. Invariance to reparameterization (particularly scaling)
+5. "Objective" (actually also subjective, but different from 2)
+6. Penalized Complexity (PC) (which we will cover the last week of the semester)
+
+> - Choose a prior family that integrates to $1$ over the parameter space, $\Theta$ 
+> - Then choose hyperparameter values that are consistent with what you believe
+> - The important part of a prior is what values it puts negligible probability on
+> - Draw from the prior predictive distribution of $\mathbf{y}$ to see if it makes sense
+
+## Dirichlet Distribution
+
+- Dirichlet distribution is over the parameter space of PMFs --- i.e. $\pi_k \geq 0$ and 
+  $\sum_{k = 1}^K \pi_k = 1$ --- and the Dirichlet PDF is
+$f\left(\boldsymbol{\pi} \mid \boldsymbol{\alpha}\right) = \frac{1}{B\left(\boldsymbol{\alpha}\right)}\prod_{k=1}^{K}\pi_{k}^{\alpha_{k}-1}$
+where $\alpha_{k}\geq0\,\forall k$ and the multivariate Beta
+function is $B\left(\boldsymbol{\alpha}\right)=\frac{\prod_{k=1}^{K}\Gamma\left(\alpha_{k}\right)}{\Gamma\left(\prod_{k=1}^{K}\alpha_{k}\right)}$
+where $\Gamma\left(z\right)= \frac{1}{z} \prod_{n = 1}^\infty \frac{\left(1 + \frac{1}{n}\right)^n}
+{1 + \frac{z}{n}} = \int_{0}^{\infty}u^{z-1}e^{-u}du$ is the Gamma function
+- $\mathbb{E}\pi_{i}=\frac{\alpha_{i}}{\sum_{k=1}^{K}\alpha_{k}}\,\forall i$
+and the mode of $\pi_{i}$ is $\frac{\alpha_{i}-1}{-1+\sum_{k=1}^{K}\alpha_{k}}$
+if $\alpha_{i}>1$
+- Iff $\alpha_{k}=1\,\forall k$, $f\left(\left.\boldsymbol{\pi}\right|\boldsymbol{\alpha}=\mathbf{1}\right)$
+is constant over $\Theta$ (simplexes)
+- Beta distribution is a special case of the Dirichlet where $K = 2$
+- Marginal and conditional distributions for subsets of $\boldsymbol{\pi}$ are also Dirichlet
+- Dirichlet distribution is conjugate with the multinomial and categorical
+
+## Multinomial Distribution
+
+* The multinomial distribution over $\Omega = \{0,1,\dots,n\}$ has a PMF
+  $\Pr\left(\left.x\right|\pi_1,\pi_2,\dots,\pi_K\right) =
+  n!\prod_{k=1}^K \frac{\pi_k^{x_k}}{x_k!}$ where the parameters satisfy
+  $\pi_k \geq 0 \forall k$, $\sum_{k=1}^K \pi_k = 1$, and $n = \sum_{k=1}^K x_k$
+
+* The multinomial distribution is a generalization of the binomial distribution to the case that
+  there are $K$ possibilities rather than merely failure vs. success
+* Categorical is a special case where $n = 1$
+* The multinomial distribution is the count of $n$ independent categorical random variables
+  with the same $\pi_k$ values
+* Draw via `rmultinom(1, size = n, prob = c(pi_1, pi_2, ..., pi_K))`
