@@ -260,7 +260,8 @@ tibble(y = rbinom(10^6,  size = n, prob = theta_0), # y is random, not theta_0
 - Jerzy Neyman, who invented the confidence interval, 
 [said](https://en.wikipedia.org/wiki/Confidence_interval#Interpretation)
 
-> I have repeatedly stated that the frequency of correct results will tend to $\alpha$ [the type I error rate]. Consider now the case when a sample is already drawn, and the calculations have given [particular limits]. Can we say that in this particular case the probability of the true value [falling between these limits] is equal to $\alpha$? The answer is obviously in the negative. The parameter is an unknown constant, and no probability statement concerning its value may be made \dots"
+> I have repeatedly stated that the frequency of correct results will tend to $\alpha$ 
+[1 minus the type I error rate]. Consider now the case when a sample is already drawn, and the calculations have given [particular limits]. Can we say that in this particular case the probability of the true value [falling between these limits] is equal to $\alpha$? The answer is obviously in the negative. The parameter is an unknown constant, and no probability statement concerning its value may be made \dots"
 
 > - So, the FDA's rule that in order to approve a vaccine --- the confidence interval for the VE
   should exclude $0.3$ --- does not imply there is a $0.95$ probability that the VE is greater
