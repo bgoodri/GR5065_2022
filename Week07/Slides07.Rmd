@@ -106,7 +106,7 @@ round(indep, digits = 3)
   structure where the future is conditionally independent of the past given the present,
   but nothing is marginally independent of anything else
 * An AR1 model is a linear Markov process where
-$x_t = \mu \left(1 - \rho\right) \rho x_{t - 1} + \epsilon_t$
+$x_t = \mu \left(1 - \rho\right) + \rho x_{t - 1} + \epsilon_t$
 * As $T \uparrow \infty$, the $T$-th realization is distributed normal with expectation
   $\mu$ and standard deviation $\frac{\sigma}{\sqrt{1 - \rho^2}}$, where $\sigma$
   is the standard deviation of $\epsilon_t$, as in
