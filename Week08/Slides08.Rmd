@@ -1,0 +1,387 @@
+---
+title: "Linear Models with the **rstanarm** R Package"
+author: "Ben Goodrich"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{amssymb}
+   - \usepackage{color}
+   - \usepackage{cancel}
+output:
+  ioslides_presentation:
+    widescreen: yes
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+</style>
+
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+
+```{r setup, include=FALSE}
+options(width = 90)
+library(knitr)
+knit_hooks$set(small.mar = function(before, options, envir) {
+    if (before) par(mar = c(4, 4, .1, .1), las = 1)  # smaller margin on top and right
+})
+hook_output <- knit_hooks$get("output")
+knit_hooks$set(output = function(x, options) {
+  lines <- options$output.lines
+  if (is.null(lines)) {
+    return(hook_output(x, options))  # pass to default hook
+  }
+  x <- unlist(strsplit(x, "\n"))
+  more <- "..."
+  if (length(lines)==1) {        # first n lines
+    if (length(x) > lines) {
+      # truncate the output, but add ....
+      x <- c(head(x, lines), more)
+    }
+  } else {
+    x <- c(more, x[lines], more)
+  }
+  # paste these lines together
+  x <- paste(c(x, ""), collapse = "\n")
+  hook_output(x, options)
+})
+library(rstanarm)
+library(ggplot2)
+set.seed(20220319)
+options(mc.cores = parallel::detectCores()) # use all the cores on your computer
+```
+
+## Data on 2020 Trump Vote and 2022 Vaccination
+
+```{r, message = FALSE}
+library(readr); library(dplyr)
+# https://docs.google.com/spreadsheets/d/100BFc0VppVL8CIhaNh5ZiTFGBNCnGBdYzfqISAWxln8/
+Gabba <- read_csv("Gabba.csv", col_types = c("ccccdddddddddd"), skip = 1, col_names = 
+                    c("FIPS", "ST", "State", "County", "Trump#", "Votes#", "Trump", "Pop",
+                      "Vaccinated#", "Vaccinated", "Death1", "Death2", "Death3", "Death4"))
+select(Gabba, State:Vaccinated) %>%
+  glimpse # each row is a county
+```
+
+## Model for Vaccinated % by U.S. County
+
+```{tikz, fig.cap = "Model", fig.ext = 'png', echo = FALSE}
+\usetikzlibrary{bayesnet}
+\begin{tikzpicture}[node distance=2cm, auto,>=latex', thick, scale = 0.1]
+
+  % Define nodes
+
+  % Y
+  \node[obs]          (y)   {vaccinated \%}; %
+
+  % X
+  \node[obs, left=5 of y] (x)   {Trump \%}; %
+
+  % conditional mean function
+  \node[det, right=2 of x] (m) {$\mu$} ; %
+
+  % parameters
+  \node[latent, above=0.9 of m]  (a) {$\alpha$} ; %
+  \node[latent, above=0.4 of x]  (b) {$\beta$}  ; %
+  \node[latent, above=0.4 of y]  (s) {$\sigma$} ; %
+  \edge {a,b,x} {m} ; %
+  
+  % Factors
+  \factor[left=of y] {y-f} {above:$\mathcal{N}$} {m,s} {y} ; %
+  \factor[above=of a] {a-f} {left:$\mathcal{N}$} {} {a}; %
+  \factor[above=of b] {b-f} {left:$\mathcal{N}$} {} {b} ; %
+  \factor[above=of s] {s-f} {right:$\mathcal{E}$} {} {s} ; %
+  
+  % Operators
+  \node[const, above=0.15 of x] (times) {$\times$} ; %
+  \node[const, right=1.20 of b] (plus) {$+$} ; %
+  
+  % U
+  \node[latent, below=1.65 of plus] (I) {Ideology} ; %
+  \edge {I} {x} ; %
+  \edge {I} {y} ; %
+  
+  % Plates
+  \plate {yx} { %
+    (y)(y-f)(y-f-caption) %
+    (x)(x)(y-f-caption) %
+  } {$\forall n \in 1, 2, \dots, N$} ;
+\end{tikzpicture}
+```
+
+* Circles are variables, shading indicates the variable is observable, 
+  diamond indicates the quantity is deterministic, plates indicate that
+  all of the interior quantities are indexed by $n$, squares indicate
+  probability distributions
+
+## Prior Predictive Distribution for a Linear Model
+
+<div class="columns-2">
+$$\alpha \thicksim ???$$
+$$\forall k: \beta_k \thicksim ???$$
+$$\forall n: \mu_n \equiv \alpha + \sum_{k = 1}^K \beta_k x_{nk}$$
+$$0 < \sigma \thicksim ???$$
+$$\forall n: \epsilon_n \thicksim \mathcal{N}\left(0, \sigma\right)$$
+$$\forall n: y_n \equiv \mu_n + \epsilon_n$$
+</div>  
+where `???` indicates the parameter is drawn from your belief distribution
+
+* The assumption of this data-generating process is that each $\epsilon_n$
+  is MARGINALLY normal (with expectation $0$ and standard deviation $\sigma > 0$), 
+  implying that each $y_n$ is CONDITIONALLY normal
+  (with expectation $\mu_n$ and standard deviation $\sigma$)
+* You can mimic what happens when you put a probability distribution through
+  an assumed data-generating process by putting a large number of random draws
+  from that probability distribution through that data-generating process
+
+## Drawing from the Prior Predictive Distribution
+
+```{r, prior_predictive, cache = TRUE, fig.keep="none", warning = FALSE}
+N <- nrow(Gabba); x <- Gabba$Trump; x <- x - mean(x, na.rm = TRUE)
+prior_predictive <- replicate(10, { # usually do more draws, but harder to plot
+  alpha_ <- rnorm(n = 1, mean = 50, sd = 3)  # relative to a centered x
+  beta_ <- rnorm(n = 1,  mean = -0.5, sd = 1)
+  mu_ <- alpha_ + beta_ * x
+  
+  sigma_ <- rexp(n = 1, rate = 0.2)
+  epsilon_ <- rnorm(n = N, mean = 0, sd = sigma_)
+  
+  y_ <- mu_ + epsilon_
+  return(y_)
+})
+
+library(ggplot2) # plot on next slide
+ggplot(tibble(y_ = c(prior_predictive), replication = as.factor(rep(1:10, each = N)))) +
+  geom_density(aes(x = y_, color = replication), show.legend = FALSE)
+```
+
+## Plot from Previous Slide (each line is a dataset)
+
+```{r, echo = FALSE, fig.height=5, fig.width=10, warning = FALSE}
+ggplot(tibble(y_ = c(prior_predictive), replication = as.factor(rep(1:10, each = N)))) +
+  geom_density(aes(x = y_, color = replication), show.legend = FALSE)
+```
+
+## The `stan_glm` Function in the rstanarm Package
+
+```{r, results = "hide"}
+post <- stan_glm(Vaccinated ~ Trump, data = Gabba, subset = Vaccinated <= 100,
+                 family = gaussian, cores = 4, seed = 12345, # set.seed() insufficient
+                 prior_intercept = normal(location = 50, scale = 3), 
+                 prior = normal(location = -0.5, scale = 1),
+                 prior_aux = exponential(rate = 0.2)) # expectation and std. deviation of 5
+```
+```{r, output.lines = -(1:6)}
+post # intercept relative to uncentered predictors, i.e. a county where Trump got 0%
+```
+
+## Plotting the Marginal Posterior Densities
+
+```{r}
+plot(post, plotfun = "areas_ridges", pars = c("Trump", "sigma")) # excluding intercept
+```
+
+## Credible Intervals and Posterior Probabilities
+
+```{r}
+# what people mistake confidence intervals for
+round(posterior_interval(post, prob = 0.8), digits = 2)
+```
+```{r}
+beta <- as.data.frame(post)$Trump # coefficient
+mean(beta > -0.5) # what people mistake p-values for
+```
+
+## Do This Once on Each Computer You Use
+
+- R comes with a terrible default coding for ordered factors in regressions known
+  as "Helmert" contrasts
+- Execute this once to change them to "treatment" contrasts, which is the conventional
+  coding in the social sciences with dummy variables relative to a baseline category
+```{r, eval = FALSE}
+cat('options(contrasts = c(unordered = "contr.treatment", ordered = "contr.treatment"))',
+    file = "~/.Rprofile", sep = "\n", append = TRUE)
+```
+- Without this, you will get a weird rotation of the coefficients on dummy variables
+  made from unordered factors
+- `"contr.sum"` is another reasonable (but rare) choice
+
+## The `stan_lm` Function in the rstanarm Package {.build}
+
+- Suppose you wanted to include a dummy variable for each state (but one)
+- One option is to give the state shifts a normal distribution with expectation
+  zero and unknown standard deviation, $\delta$, which has its own prior
+- That would be problematic because your beliefs about the shift in Alabama
+  really should not be independent of your beliefs about the shift in Mississippi
+  
+> - `stan_lm` instead asks you for a beta prior on the $R^2$, with first
+  shape parameter $\frac{K + 1}{2}$. Specifying a prior mode (the default), 
+  mean or median determines the second shape parameter, and the coefficients have
+  a joint prior with maximum entropy given the $\mathbb{E}\left[\ln R^2\right]$.
+> - There is a Jeffreys' prior on the marginal standard deviation of the
+  outcome, which along with the $R^2$ determines the standard deviation of the error
+```{r, stan_lm, cache = TRUE, results = "hide"}
+post <- stan_lm(Vaccinated ~ Trump + State, data = Gabba, subset = Vaccinated <= 100, 
+                prior = R2(0.75), prior_intercept = normal(location = 50, scale = 3))
+```
+
+## Why NUTS Is Better than Other MCMC Samplers
+
+* With Stan, it is almost always the case that things either go well or you get
+  valid warning messages
+* Because Stan uses gradients, it scales well as models get more complex. It tends
+  to be the case that the first-order autocorrelation is negative so you can get greater
+  effective sample sizes for means.
+```{r}
+round(bayesplot::neff_ratio(post)[-(6:48)], digits = 2)
+```
+
+## Posterior Prediction
+
+$$f\left(y_{n + 1} \mid y_1, \dots y_n, x_{n + 1}\right) = 
+  f\left(y_{n + 1} \bigcap \bcancel{\alpha} \bigcap \bcancel{\mathbf{\beta}} \bigcap 
+  \bcancel{\sigma} \mid y_1, \dots y_n, x_{n + 1}\right) = \\
+  \int_0^\infty \int_{-\infty}^\infty \int_{-\infty}^\infty 
+  f\left(y_{n + 1} \mid \alpha, \boldsymbol{\beta}, \sigma, x_{n + 1}\right) 
+  f\left(\alpha, \boldsymbol{\beta}, \sigma \mid y_1, \dots, y_n\right) 
+  d\alpha d\boldsymbol{\beta} d\sigma$$
+  
+We typically cannot evaluate those definite integrals, but we can draw $S$ times from the
+distribution whose PDF is $f\left(y_{n + 1} \mid y_1, \dots y_n\right)$ by drawing $S$
+times from the posterior distribution of the parameters given the past data and using
+each of those realizations of the parameters to draw $y_{n + 1}$ from its conditional 
+distribution:
+```{r, fig.keep="none"}
+Alaska <- filter(Gabba, State == "Alaska") %>% na.omit
+PPD <- posterior_predict(post, newdata = Alaska) # draws x counties (4000 x 30)
+ggplot(tibble(vax = c(PPD), county = rep(Alaska$County, each = nrow(PPD)))) + 
+  geom_boxplot(aes(y = vax)) + facet_wrap(~county) + theme(axis.text.x = element_blank())
+```
+
+## Plot from Previous Slide
+
+```{r, echo = FALSE, fig.height=5, fig.width=10}
+ggplot(tibble(vax = c(PPD), county = rep(Alaska$County, each = nrow(PPD)))) + 
+  geom_boxplot(aes(y = vax)) + facet_wrap(~county) + theme(axis.text.x = element_blank())
+```
+
+## Posterior Predictive Checking
+
+```{r, PPC, cache = TRUE, message = FALSE, warning = FALSE, fig.height = 5, fig.width = 10}
+pp_check(post, plotfun = "loo_intervals", order = "median") # each dot is a county
+```
+
+## Excercise: IQ of Three Year Olds {.build}
+
+* Many rstanarm examples are available at https://avehtari.github.io/ROS-Examples/examples.html
+* At 36 months, kids were given an IQ test
+* Suppose the conditional expectation is a linear function of variables
+  pertaining to the mother
+```{r}
+data(kidiq, package = "rstanarm")
+colnames(kidiq)
+mom_hs  <- kidiq$mom_hs - mean(kidiq$mom_hs)
+mom_iq  <- (kidiq$mom_iq - mean(kidiq$mom_iq)) / 10   # units are 10-points, not points
+mom_age <- (kidiq$mom_age - mean(kidiq$mom_age)) / 10 # units are decades, not years
+```
+
+## Drawing from the Prior Predictive Distribution
+
+```{r}
+kid_score <- with(kidiq, t(replicate(10000, {
+  alpha_ <- rnorm(1, mean = 100, sd = 15)
+  beta_hs_  <- rnorm(1, mean = 0, sd = 2.5)
+  beta_iq_  <- rnorm(1, mean = 0, sd = 2.5)
+  beta_age_ <- rnorm(1, mean = 0, sd = 2.5)
+  mu_ <- alpha_ + beta_hs_ * mom_hs + beta_iq_ * mom_iq + beta_age_ * mom_age
+  
+  sigma_ <- rexp(1, rate = 1 / 15)
+  epsilon_ <- rnorm(n = length(mu_), mean = 0, sd = sigma_)
+  mu_ + epsilon_
+})))
+summary(kid_score[ , 1]) # predictive distribution for first 3 year old (much too wide)
+```
+
+## Drawing from the Prior in rstanarm {.smaller}
+
+```{r, results="hide"}
+priors <- stan_glm(kid_score ~ mom_hs + I(mom_iq / 10) + I(mom_age / 10), 
+                   data = kidiq, family = gaussian(), prior_PD = TRUE,
+                   prior_intercept = normal(location = 100, scale = 15), 
+                   prior = normal(), prior_aux = exponential(rate = 1 / 15))
+```
+```{r, fig.height = 3.5, fig.width = 10}
+plot(priors, regex_pars = "mom") # include only mom parameters
+```
+
+## Prior Predictive Distribution in rstanarm
+
+```{r, fig.height=4, fig.width=10, message = FALSE}
+prior_PD <- posterior_predict(priors) # actually prior predictions
+ggplot(tibble(IQ = c(prior_PD))) + geom_density(aes(x = IQ)) # tails a bit too long
+```
+
+## Drawing from the Posterior Distribution
+
+```{r, results = "hide"}
+post <- update(priors, prior_PD = FALSE)
+```
+```{r, output.lines = -(1:12)}
+summary(post)
+```
+
+## Posterior vs. Prior
+
+```{r, message = FALSE}
+posterior_vs_prior(post, prob = 0.5, regex_pars = "^[^(]") # excludes (Intercept)
+```
+
+## ShinyStan
+
+- ShinyStan can be launched on an object produced by rstanarm via
+```{r, eval = FALSE, include = TRUE}
+launch_shinystan(post)
+```
+- A webapp will open in your default web browser that helps you visualize
+ the posterior distribution and diagnose problems
+
+## Linear Models with Nonlinear Predictors
+
+* `stan_lm` and `stan_glm` (with `family = gaussian`) only require that $\mu$ be a linear
+  function of the coefficients but allow $\mu$ to be a nonlinear function of $x$
+* For example, you can utilize polynomials or a "restricted cubic spine" function
+```{r, results = "hide"}
+post <- stan_lm(kid_score ~ mom_hs + rms::rcs(mom_iq) + rms::rcs(mom_age), 
+                 data = kidiq, prior = R2(0.25, what = "mode"),
+                 prior_intercept = normal(location = 100, scale = 15))
+print(post)
+```
+<div class="columns-2">
+```{r, output.lines = 7:23, echo = FALSE}
+print(post)
+```
+</div>
+
+## Don't (Mis)Interpret; Plot your Posterior Beliefs
+
+```{r, small.mar = TRUE, fig.width=10, fig.height=3.25}
+beta_age <- as.matrix(post)[ , 3:6] # 4000 x 4
+X <- rms::rcs(sort(kidiq$mom_iq))   # 434 x 4
+effect_iq <- beta_age %*% t(X)      # 4000 x 434
+quantiles <- apply(effect_iq, MARGIN = 2, FUN = quantile, probs = c(.1, .25, .5, .75, .9))
+matplot(x = sort(kidiq$mom_iq), y = t(quantiles), type = "l",
+        xlab = "Mom's IQ (when kid is born)", ylab = "Kid's IQ") # 1 color per quantile
+```
+
