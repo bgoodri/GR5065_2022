@@ -1,0 +1,332 @@
+---
+title: "Generalized Linear Models with the **rstanarm** R Package"
+author: "Ben Goodrich"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{amssymb}
+   - \usepackage{color}
+output:
+  ioslides_presentation:
+    widescreen: yes
+editor_options: 
+  chunk_output_type: console
+params:
+  class: FALSE
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+</style>
+
+```{r setup, include=FALSE}
+options(width = 90)
+library(knitr)
+knit_hooks$set(small.mar = function(before, options, envir) {
+    if (before) par(mar = c(4, 4, .1, .1), las = 1)  # smaller margin on top and right
+})
+hook_output <- knit_hooks$get("output")
+knit_hooks$set(output = function(x, options) {
+  lines <- options$output.lines
+  if (is.null(lines)) {
+    return(hook_output(x, options))  # pass to default hook
+  }
+  x <- unlist(strsplit(x, "\n"))
+  more <- "..."
+  if (length(lines)==1) {        # first n lines
+    if (length(x) > lines) {
+      # truncate the output, but add ....
+      x <- c(head(x, lines), more)
+    }
+  } else {
+    x <- c(more, x[lines], more)
+  }
+  # paste these lines together
+  x <- paste(c(x, ""), collapse = "\n")
+  hook_output(x, options)
+})
+library(rstanarm)
+options(mc.cores = parallel::detectCores())
+library(ggplot2)
+```
+
+## Prior Predictive Distribution for Roach Study {.build}
+
+```{tikz, fig.cap = "Roach Model", fig.ext = 'png', echo = FALSE}
+\usetikzlibrary{bayesnet}
+\begin{tikzpicture}[node distance=2cm, auto,>=latex', thick, scale = 0.07]
+
+  % Define nodes
+
+  % Y
+  \node[obs]          (y)   {roaches}; %
+
+  % Xs
+  \node[obs, left=7 of y] (y1) {lag\_roaches}; %
+  \node[obs, above=0.25 of y1] (T)  {treatment}; %
+  \node[obs, above=1.0 of y, xshift=-3cm] (s) {senior}; %
+  \node[obs, above=1.0 of y, xshift=-1.5cm] (o) {offset}; %
+  
+  % conditional mean function
+  \node[det, right=3 of y1] (n) {$\eta$} ; %
+  \node[det, right=5 of y1] (m) {$\mu$} ; %
+
+  % parameters
+  \node[latent, above=3.4 of n]   (a) {$\alpha$} ; %
+  \node[latent, above=3.0 of y1]  (b1) {$\beta_1$}  ; %
+  \node[latent, right=0.5 of b1]  (b2) {$\beta_2$}  ; %
+  \node[latent, right=0.5 of b2]  (b3) {$\beta_3$}  ; %
+
+  \edge {a,b1,b2,b3,y1,T,s,o} {n} ; %
+  \edge {n} {m} ; %
+  \node[const, right=0.4 of n, yshift=-0.25cm] (exp) {$\exp$} ; %
+  
+  % Factors
+  \factor[left=of y] {y-f} {below:$\mathcal{P}$} {m} {y} ; %
+  \factor[above=of a] {a-f} {right:$\mathcal{N}$} {} {a}; %
+  \factor[above=of b1] {b1-f} {left:$\mathcal{N}$} {} {b1} ; %
+  \factor[above=of b2] {b2-f} {right:$\mathcal{N}$} {} {b2} ; %
+  \factor[above=of b3] {b3-f} {left:$\mathcal{N}$} {} {b3} ; %
+
+  % Hyperparameters
+  \node[const, above=0.4 of a-f, xshift=-0.2cm] (m_a) {$m_a$} ; %
+  \node[const, above=0.4 of a-f, xshift=+0.2cm] (s_a) {$s_a$} ; %
+  \edge[-] {m_a,s_a} {a-f} ; %
+  \node[const, above=0.4 of b1-f, xshift=-0.25cm] (m_b1) {$m_{b_1}$} ; %
+  \node[const, above=0.4 of b1-f, xshift=+0.25cm] (s_b1) {$s_{b_1}$} ; %
+  \edge[-] {m_b1,s_b1} {b1-f} ; %
+  \node[const, above=0.4 of b2-f, xshift=-0.25cm] (m_b2) {$m_{b_2}$} ; %
+  \node[const, above=0.4 of b2-f, xshift=+0.25cm] (s_b2) {$s_{b_2}$} ; %
+  \edge[-] {m_b2,s_b2} {b2-f} ; %
+  \node[const, above=0.4 of b3-f, xshift=-0.25cm] (m_b3) {$m_{b_3}$} ; %
+  \node[const, above=0.4 of b3-f, xshift=+0.25cm] (s_b3) {$s_{b_3}$} ; %
+  \edge[-] {m_b3,s_b3} {b3-f} ; %
+
+  % Plates
+  \plate {yx} { %
+    (y)(y-f)(y-f-caption) %
+    (y1)(y-f)(y-f-caption) %
+    (T)(y-f)(y-f-caption) %
+    (s)(y-f)(y-f-caption) %
+  } {$\forall n \in 1, 2, \dots, N$} ;
+\end{tikzpicture}
+```
+
+## Prior Predictive Distribution in Symbols
+
+$$
+\alpha \thicksim \mathcal{N}\left(m_\alpha, s_\alpha\right) \\
+\beta_1 \thicksim \mathcal{N}\left(m_{\beta_1}, s_{\beta_1}\right) \\
+\beta_2 \thicksim \mathcal{N}\left(m_{\beta_2}, s_{\beta_2}\right) \\
+\beta_3 \thicksim \mathcal{N}\left(m_{\beta_3}, s_{\beta_3}\right) \\
+\forall n: \eta_n \equiv \alpha + OFFSET_n + 
+  \beta_1 \times \log LAG_n + \beta_2 \times SENIOR_n + \beta_3 \times T_n \\
+\forall n: \mu_n \equiv e^{\eta_n} \\
+\forall n: Y_n \thicksim \mathcal{P}\left(\mu_n\right)
+$$
+
+* In this case, the inverse link function mapping the linear predictor $\eta_n$ 
+  on $\mathbb{R}$ to the outcome's conditional expectation $\mu_n$ on
+  $\mathbb{R}_+$ is the antilog function.
+
+## Prior Predictive Distribution with `stan_glm`
+
+```{r, results = "hide"}
+roaches <- roaches[roaches$roach1 > 0, ]
+priors  <- stan_glm(y ~ senior + log(roach1) + treatment, data = roaches,
+                    family = poisson, offset = log(exposure2), QR = TRUE, prior_PD = TRUE)
+```
+```{r, fig.width=10, fig.height=3, warning = FALSE}
+pp_check(priors, plotfun = "dens") + scale_x_continuous(trans = "log10")
+```
+
+## Posterior Distribution 
+
+```{r, roaches, cache = TRUE, results = "hide"}
+post <- update(priors, prior_PD = FALSE)
+```
+```{r, output.lines = -(1:6)}
+print(post, digits = 2)
+```
+
+## Estimating Treatment Effects
+
+```{r, fig.height = 3.75, fig.width = 10}
+df <- roaches; df$treatment <- 0
+Y_0 <- posterior_epred(post, newdata = df, offset = log(df$exposure2))
+df$treatment <- 1
+Y_1 <- posterior_epred(post, newdata = df, offset = log(df$exposure2))
+ggplot(data.frame(delta = colMeans(Y_1 - Y_0))) + geom_density(aes(x = delta))
+```
+
+## Numerical Assessment of Calibration
+
+```{r}
+PPD <- posterior_predict(post); dim(PPD)
+lower <- apply(PPD, MARGIN = 2, FUN = quantile, probs = 0.25)
+upper <- apply(PPD, MARGIN = 2, FUN = quantile, probs = 0.75)
+mean(roaches$y > lower & roaches$y < upper) # bad fit
+```
+
+* Overall, the model is fitting the data poorly
+* You will often overfit when you lazily use all predictors that are available in
+  the dataset
+
+## Adding Overdispersion
+
+$$
+\alpha \thicksim \mathcal{N}\left(m_\alpha, s_\alpha\right) \\
+\beta_1 \thicksim \mathcal{N}\left(m_{\beta_1}, s_{\beta_1}\right) \\
+\beta_2 \thicksim \mathcal{N}\left(m_{\beta_2}, s_{\beta_2}\right) \\
+\beta_3 \thicksim \mathcal{N}\left(m_{\beta_3}, s_{\beta_3}\right) \\
+\forall n: \eta_n \equiv \alpha + OFFSET_n + 
+  \beta_1 \times \log LAG_n + \beta_2 \times SENIOR_n + \beta_3 \times T_n \\
+\forall n: \mu_n \equiv e^{\eta_n} \\
+\phi \thicksim \mathcal{E}\left(r\right) \\
+\forall n: \epsilon_n \thicksim \mathcal{G}\left(\phi,\phi\right) \\
+\forall n: Y_n \thicksim \mathcal{Poisson}\left(\epsilon_n \mu_n\right)
+$$
+
+* The conditional distribution of $Y_n$ given $\mu_n$ and a 
+  Gamma-distributed $\epsilon_n$ and is Poisson, but the conditional
+  distribution of $Y_n$ given $\mu_n$ irrespective of $\epsilon_n$
+  is negative binomial with expectation $\mu_n$ and variance 
+  $\mu_n + \mu_n^2 / \phi$
+
+## Posterior if Likelihood Is Negative Binomial
+
+```{r, NB, cache = TRUE, results = "hide"}
+post <- update(post, family = neg_binomial_2)
+```
+```{r, output.lines = -(1:6)}
+print(post, digits = 2)
+```
+
+## Prior Predictive Distribution for Well Switching {.build}
+
+```{tikz, fig.cap = "Well Switching Model", fig.ext = 'png', echo = FALSE}
+\usetikzlibrary{bayesnet}
+\begin{tikzpicture}[node distance=2cm, auto,>=latex', thick, scale = 0.07]
+
+  % Define nodes
+
+  % Y
+  \node[obs]          (y)   {switch?}; %
+
+  % Xs
+  \node[obs, left=7 of y] (d) {distance}; %
+  \node[obs, above=0.25 of d] (t)  {arsenic}; %
+
+  % conditional mean function
+  \node[det, right=3 of d] (n) {$\eta$} ; %
+  \node[det, right=5 of d] (m) {$\mu$} ; %
+
+  % parameters
+  \node[latent, above=2.4 of n]   (a) {$\alpha$} ; %
+  \node[latent, above=2.0 of d]  (bk) {$\beta_k$}  ; %
+
+  \edge {a,bk,d,t} {n} ; %
+  \edge {n} {m} ; %
+  \node[const, right=0.4 of n, yshift=-0.5cm] (inv_logit) {logit$^{-1}$} ; %
+
+  % Factors
+  \factor[left=of y] {y-f} {below:$\mathcal{B}$} {m} {y} ; %
+  \factor[above=of a] {a-f} {right:$\mathcal{N}$} {} {a}; %
+  \factor[above=of bk] {bk-f} {left:$\mathcal{N}$} {} {bk} ; %
+  
+  % Hyperparameters
+  \node[const, above=0.4 of a-f, xshift=-0.2cm] (m_a) {$m_\alpha$} ; %
+  \node[const, above=0.4 of a-f, xshift=+0.2cm] (s_a) {$s_\alpha$} ; %
+  \edge[-] {m_a,s_a} {a-f} ; %
+  \node[const, above=0.4 of bk-f, xshift=-0.25cm] (m_bk) {$0$} ; %
+  \node[latent, above=0.4 of bk-f, xshift=+0.5cm] (s_b) {$\sigma_{\beta}$} ; %
+  \edge[-] {m_bk,s_b} {bk-f} ; %
+  \node[const, left=1.0 of m_a] (r) {$r$} ; %
+  \factor[right=1.0 of s_b] {s-f} {below:$\mathcal{E}$} {r} {s_b}; %
+
+  % Plates
+  \plate {yx} { %
+    (y)(y-f)(y-f-caption) %
+    (d)(y-f)(y-f-caption) %
+    (t)(y-f)(y-f-caption) %
+  } {$\forall n \in 1, 2, \dots, N$} ;
+\end{tikzpicture}
+```
+
+## Prior Predictive Distribution in Symbols
+
+$$
+\sigma_\beta: \thicksim \mathcal{E}\left(r\right) \\
+\forall k: \beta_k \thicksim \mathcal{N}\left(0, \sigma_\beta\right) \\
+\alpha \thicksim \mathcal{N}\left(m_\alpha, s_\alpha\right) \\
+\forall n: \eta_n \equiv \alpha + s\left(ARSENIC_n, DISTANCE_n, \beta_1 \dots \beta_K\right) \\
+\forall n: \epsilon_n \thicksim \mathcal{L}\left(0,1\right) \\
+\forall n: u_n \equiv \eta_n + \epsilon_n \\
+\forall n: Y_n \equiv u_n > 0
+$$
+
+* $s\left(\cdot\right)$ is a smooth but non-linear function of arsenic and
+  well-distance that has many coefficients, each of which has a normal prior
+  with expectation zero and standard deviation $\sigma_\beta$, which 
+  has an exponential prior with expectation $r^{-1}$
+* $\Pr\left(y_n  = 1 \mid \dots\right) = \Pr\left(\eta_n + \epsilon_n > 0\right) =
+  \Pr\left(\epsilon_n > -\eta_n\right) = \Pr\left(\epsilon_n \leq \eta_n\right)$,
+  which can evaluated using the standard logistic CDF,
+  $F\left(\eta_n\right) = \frac{1}{1 + e^{-\eta_n}}$
+
+## Inverse Link Functions
+
+```{r, echo = FALSE, small.mar = TRUE}
+curve(plogis(eta), from = -5, to = 5, xname = "eta", xlab = "Linear Predictor",
+      ylab = "Probability")
+curve(pnorm(eta), from = -5, to = 5, xname = "eta", add = TRUE, col = 2, lty = 2)
+legend("topleft", legend = c("Logistic", "Normal"), col = 1:2, lty = 1:2)
+```
+
+## Posterior Distribution {.smaller}
+
+```{r, logit, cache = TRUE, results = "hide"}
+post <- stan_gamm4(switch ~ s(dist, arsenic), data = wells, family = binomial, adapt_delta = 0.98)
+```
+<div class="columns-2">
+```{r, output.lines = -(1:5)}
+print(post, digits = 2)
+```
+</div>
+
+## Nonlinear Plot
+
+```{r, message = FALSE, warning=FALSE, fig.height=5, fig.width=10}
+plot_nonlinear(post) # coloring is in log-odds units
+```
+
+## Plotting the Effect of an Increase in Arsenic
+
+```{r, small.mar = TRUE, fig.height=4, fig.width=10}
+mu_0 <- posterior_epred(post)
+df <- wells; df$arsenic <- df$arsenic + 1
+mu_1 <- posterior_epred(post, newdata = df)
+plot(density(mu_1 - mu_0), main = "", xlab = "Change in Probabilty of Switching")
+```
+
+## A Binomial Model for Romney vs Obama in $2012$ {.smaller}
+
+```{r, message = FALSE, warning = FALSE}
+poll <- readRDS("GooglePoll.rds") # WantToWin is coded as 1 for Romney and 0 for Obama
+library(dplyr)
+collapsed <- filter(poll, !is.na(WantToWin)) %>%
+             group_by(Region, Gender, Urban_Density, Age, Income) %>%
+             summarize(Romney = sum(grepl("Romney", WantToWin)), Obama = n() - Romney) %>%
+             na.omit
+```
+```{r, president, cache = TRUE, results = "hide"}
+post <- stan_glm(cbind(Romney, Obama) ~ ., data = collapsed, family = binomial(link = "probit"), 
+                 QR = TRUE, init_r = 0.25)
+```
+<div class="columns-2">
+```{r, output.lines = 7:24}
+print(post, digits = 2)
+```
+</div>
