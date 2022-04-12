@@ -1,0 +1,383 @@
+---
+title: "GR5065 Homework 5"
+date: "Due April 11, 2022 at 4PM"
+author: "Ben Goodrich"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+    number_sections: yes
+urlcolor: blue
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, setup}
+set.seed(20220411)
+options(mc.cores = parallel::detectCores())
+```
+
+# Employment
+
+```{r, message = FALSE}
+library(haven)
+library(dplyr)
+library(rstanarm)
+CPS <- as_factor(read_dta(dir(pattern = "^cepr_.*dta$"))) 
+CPS <- filter(CPS, year == 2019, month == 12)
+```
+
+## Selection
+
+The general principles for drawing from a reasonable prior predictive distribution are
+
+* Center the predictors, so that the intercept can be interpreted relative to a unit
+  with average predictors
+* Choose a prior distribution on the intercept that is roughly consistent with your
+  marginal beliefs about the outcome, which is going to result in a slightly weaker
+  prior on this conditional expectation
+* Do not make the prior uncertainty on the coefficients too big
+
+In addition, with any GLM (that does not use the identity inverse link function),
+you need to consider the (nonlinear) mapping from the linear predictor to the
+conditional expectation of the outcome. In the case of Bernoulli models, that
+can equivalently be thought of as using some CDF as the inverse link function
+or by considering the sign of the linear preditor plus a draw from the error distribution.
+In the case of count models, the conditional expectation is usually the antilog
+of the linear predictor, in which case the coefficients should be near zero
+and if so they can be interpreted as percentage changes.
+
+In this case, perhaps the most important predictor of whether someone is in the
+labor force is how old they are, with young people often not being in the labor
+force because they are full-time students and old people often not being in the
+labor force because they are retired. Thus, labor force participation is related
+to age in perhaps a nonlinear fashion, and in addition, it differs substantially
+between men and women, particularly for younger women who are married and have
+children. Your model should at least attempt to capture these dynamics, in addition
+to the usual suspects, such as race and education that also affect the probability
+that someone has a job given that they are in the labor force. 
+
+```{r}
+CPS <- filter(CPS, !is.na(ownchild))
+N <- nrow(CPS)
+
+# pull out predictors
+age <- CPS$age / 10 # in decades
+female <- CPS$female
+Black <- CPS$wbho == "Black"
+Hispanic <- CPS$wbho == "Hispanic"
+Other_race <- CPS$wbho == "Other"
+married <- CPS$married
+ownchild <- CPS$ownchild
+ch05 <- CPS$ch05
+HS <- CPS$educ == "HS"
+Some <- CPS$educ == "Some college"
+College <- CPS$educ == "College"
+Advanced <- CPS$educ == "Advanced"
+
+# create interaction terms
+age_female <- age * female
+married_female <- married * female
+ownchild_female <- ownchild * female
+ch05_female <- ch05 * female
+married_ownchild_female <- married * ownchild_female
+married_ch05_female <- married * ch05_female
+
+# center each variable
+age <- age - mean(age)
+female <- female - mean(female)
+Black <- Black - mean(Black)
+Hispanic <- Hispanic - mean(Hispanic)
+Other_race <- Other_race - mean(Other_race)
+married <- married - mean(married)
+ownchild <- ownchild - mean(ownchild)
+ch05 <- ch05 - mean(ch05)
+HS <- HS - mean(HS)
+Some <- Some - mean(Some)
+College <- College - mean(College)
+Advanced <- Advanced - mean(Advanced)
+age_female <- age_female - mean(age_female)
+married_female <- married_female - mean(married_female)
+ownchild_female <- ownchild_female - mean(ownchild_female)
+ch05_female <- ch05_female - mean(ch05_female)
+married_ownchild_female <- married_ownchild_female - mean(married_ownchild_female)
+married_ch05_female <- married_ch05_female - mean(married_ch05_female)
+
+# chose an intercept location that implies about a 2 / 3 participation rate
+mu_alpha_1 <- qnorm(0.72)
+sd_alpha_1 <- 0.05
+
+# create matrix of predictors for participation
+X_1 <- cbind(age, female, Black, Hispanic, Other_race, married, ownchild, ch05, 
+             HS, Some, College, Advanced, age_female, married_female, ownchild_female,
+             ch05_female, married_ownchild_female, married_ch05_female)
+sd_beta_1 <- 0.25
+
+# choose an intercept location that implies about 5% unemployment rate among people in the labor force
+mu_alpha_2 <- qnorm(0.953)
+sd_alpha_2 <- 0.01
+
+# create matrix of predictors for employment, with fewer columns
+X_2 <- cbind(age, female, Black, Hispanic, Other_race, married, ownchild, ch05, 
+             HS, Some, College, Advanced)
+sd_beta_2 <- 0.25
+
+y_ <- t(replicate(1000, {
+  alpha_1 <- rnorm(n = 1, mean = mu_alpha_1, sd = sd_alpha_1)
+  beta_1 <- rnorm(n = ncol(X_1), mean = 0, sd = sd_beta_1)
+  eta_1 <- alpha_1 + c(X_1 %*% beta_1)
+  errors_1 <- rnorm(n = N)
+  
+  rho <- runif(n = 1, min = 0, max = 0.9)
+  
+  alpha_2 <- rnorm(1, mean = mu_alpha_2, sd = sd_alpha_2)
+  beta_2 <- rnorm(ncol(X_2), mean = 0, sd = sd_beta_2)
+  eta_2 <- alpha_2 + c(X_2 %*% beta_2)
+  errors_2 <- rnorm(N, mean = -rho * errors_1, sd = sqrt(1 - rho^2))
+  
+  return(ifelse((eta_1 + errors_1) < 0, -1, (eta_2 + errors_2) > 0))
+}))
+```
+
+## Prior Predictive Checking
+
+```{r}
+proportions <- prop.table(table(y_))
+1 - proportions[1] # participation rate
+proportions[2] / (1 - proportions[1]) # unemployment rate
+
+summary(colMeans(y_ == 1)) # probability each person has a job
+```
+
+## Probit Model
+
+```{r, probit, cache = TRUE, results = "hide", warning = FALSE}
+post_probit <- stan_glm(1 - nilf ~ age * female * married * ownchild * ch05 + wbho + educ,
+                        data = CPS, family = binomial(link = "probit"),
+                        prior_intercept = normal(location = mu_alpha_1, scale = sd_alpha_1),
+                        prior = normal(location = 0, scale = sd_beta_1), 
+                        iter = 1000, init_r = 0.25, QR = TRUE)
+```
+
+```{r, age, cache = TRUE, message = FALSE}
+library(bayesplot)
+mu <- posterior_epred(post_probit)
+mf <- model.frame(post_probit)
+age <- as.array(mf$age)
+sex <- factor(mf$female, levels = 0:1, labels = c("male", "female"))
+ppc_intervals_grouped(rep(2/3, ncol(mu)), mu, x = age, group = sex)
+```
+
+
+## Interpretation
+
+Almost all of these are quite near $0$ or $1$, indicating that we are
+essentially certain about their signs conditional on these $N$ observations
+(and the priors that we started with).
+```{r}
+colMeans(as.matrix(post_probit) > 0)
+```
+
+# Auto Insurance
+
+```{r, message = FALSE}
+UBI <- readr::read_csv("http://www2.math.uconn.edu/~valdez/telematics_syn-032021.csv")
+UBI <- mutate(UBI, # create sane units for integer valued variables
+              Insured.age = Insured.age / 10,
+              Credit.score = Credit.score / 100,
+              Annual.miles.drive = Annual.miles.drive / 10000,
+              Years.noclaims = Years.noclaims / 10,
+              Total.miles.driven = Total.miles.driven / 10000,
+              Brake.06miles = Brake.06miles / 100,
+              Brake.08miles = Brake.08miles / 100,
+              Brake.09miles = Brake.09miles / 100,
+              Brake.11miles = Brake.11miles / 100,
+              Brake.12miles = Brake.12miles / 100,
+              Brake.14miles = Brake.14miles / 100)
+              
+training <- UBI[1:50000, ]
+testing  <- UBI[-(1:50000), ]
+```
+
+## SMOTE
+
+SMOTE is deterministic, unless there is some bootstrapping or $K$-folding involved
+to choose hyperparameters, whereas in order to draw from the prior predictive
+distribution of the outcomes, you first have to draw from the prior distribution
+of the unknown parameters and then condition on those realizations when drawing
+outcome data from their conditional distribution given the parameters. Both
+SMOTE and prior predictive checking have some reference to establish reasonableness,
+However, SMOTE would be more like using the _posterior_ predictive distribution,
+although SMOTE still does not propagate uncertainty in the parameters to uncertainty
+in the predicted outcomes. Also, SMOTE involves getting something reasonable for
+both the outcomes and the predictors, whereas the Bayesian approaches always take
+the predictors as given and generate a predictive distribution of the outcomes
+only. Thus, a Bayesian approach might well be unacceptable in this case where
+you want to generate a synthetic dataset that does not disclose any private
+information about actual individuals or trade secrets of the auto insurance
+company. In order to get noise into the predictors in the synthetic dataset,
+you would have to model them, in which case they would not be exclusively
+predictors anymore.
+
+## Bayesian Optimization
+
+As mentioned in the Wikipedia page, the term "Bayesian optimization" originally dates 
+to the 1970s and 1980s (although you have to be careful that some people today might
+mean something different by it). Thus, it does not involve MCMC, which is the hallmark
+of "modern" Bayesian analysis. 
+
+But it does involve putting a prior distribution over an unknown function, choosing
+hyperparameters via numerical optimization (rather than MCMC), and obtaining updated
+beliefs (albeit without uncertainty) about the value of the unknown function at 
+a particular set of points, along with some procedure to predict the outcome at a
+new point. It is optimal with respect to its objective function, but not optimal
+for responsible scientific inference.
+
+Thus, a more modern treatment would use something like `rstanarm::stan_gamm4`
+or `brms::brm` with `s()` to estimate a spline for the unknown function but
+use MCMC to obtain draws of all the unknowns conditional on the known data. Another
+choice that is mentioned in the Wikipedia article and can be done with Stan is to
+use a Gaussian process, which can be approximated by a spline (rstanarm) or a series of 
+basis functions (brms).
+
+## Count Models
+
+```{r, prior, cache = TRUE, results = "hide", warning = FALSE}
+prior_poisson <- stan_glm(NB_Claim ~ Insured.age + Insured.sex + Credit.score + Annual.miles.drive + 
+                            Marital + Years.noclaims + 
+                            Pct.drive.wkend + `Pct.drive.rush am` + `Pct.drive.rush pm` +
+                            Brake.06miles + Brake.08miles + Brake.09miles + Brake.11miles +
+                            Brake.12miles + Brake.14miles, 
+                          data = training, family = poisson, offset = log(Duration),
+                          prior_intercept = normal(location = -8, scale = 1),
+                          prior = normal(location = 0, scale = 0.2, autoscale = TRUE),
+                          QR = TRUE, seed = 20220411, prior_PD = TRUE, iter = 1000)
+```
+
+```{r, warning = FALSE}
+posterior_predict(prior_poisson, draws = 100, offset = log(training$Duration)) %>% 
+  table %>% prop.table %>% head(n = 5) %>% round(digits = 2)
+```
+
+```{r, poisson, cache = TRUE, results = "hide", dependson="prior", warning = FALSE}
+post_poisson <- update(prior_poisson, prior_PD = FALSE)
+```
+
+```{r, NB, cache = TRUE, results = "hide", dependson="poisson", warning = FALSE}
+post_NB <- update(prior_poisson, family = neg_binomial_2, 
+                  prior_aux = exponential(rate = 0.1))
+```
+
+## Posterior Predictive Checking of Count Models
+
+The confusion matrix for the Poisson model is fine, which goes to show the futility
+of trying to ascertain whether a zero-inflated _model_ is necessary from the observed
+number of zeros in the _marginal_ outcome. Conditional on the predictors and the
+intercept, the _model_ may well be predicting the zeros with the appropriate probability,
+but you have to actually estimate the model to find out.
+
+The problem with the negative binomial model is not so much that it is predicting
+too few zeros, as it is that it is predicting way too many people having hundreds
+or even millions of car accidents (when the auto insurance company would have
+dropped such people after a few accidents).
+```{r, zeros, cache = TRUE}
+posterior_predict(post_poisson, draws = 1) %>%
+  table(y = training$NB_Claim) %>%
+  prop.table
+
+posterior_predict(post_NB, draws = 1) %>%
+  table(y = training$NB_Claim) %>%
+  prop.table
+```
+
+## PSISLOOCV
+
+Observations $10684$ and $20391$ bear further scrutiny, and perhaps a couple of others as well.
+But we can easily omit each of those points whose estimated Pareto $k$ parameter is greater
+than $0.7$ when refitting the model in order to estimate the ELPD without having to unnecessarily
+refit the model $49,998$ other times when those $49,998$ points individually have a small effect
+on the posterior distribution
+
+```{r, loo_poisson, cache = TRUE}
+plot(loo(post_poisson), label_points = TRUE)
+loo(post_poisson, k_threshold = 0.7)
+```
+
+In contrast, many of the points have high Pareto $k$ estimates, so refitting the model omitting
+each of them in turn would take a long time and probably would not result in a good estimated
+ELPD anyway.
+
+```{r, loo_NB, cache = TRUE}
+plot(loo(post_NB), label_points = TRUE)
+# loo(post_NB, k_threshold = 0.7)
+```
+
+## ELPD
+
+The ELPD _calculated_ over the $N$ observations in the `testing` data, is similar to the ELPD
+_estimated_ from the $N$ observations in the `training` data for the Poisson model only,
+especially when you take into account the estimated standard error of the estimated ELPD.
+This implies that splitting the original `UBI` dataset into `training` and `testing`
+was completely unnecessary for a Bayesian analysis, wasted the observations in `testing`
+that could have been used to further update your beliefs about the unknown parameters,
+and did not provide additional insight as to which model to prefer. Moreover, the fact
+that the calculated and estimated ELPDs were similar illustrates that the model did
+not badly overfit the data that was conditioned on once you consider the average of
+the fit metric over the posterior draws rather than calculating the fit metric only at a mode.
+
+```{r, log_lik, cache = TRUE, dependson = "poisson"}
+log_lik(post_poisson, newdata = testing, offset = log(testing$Duration)) %>% rowSums %>% mean
+log_lik(post_NB, newdata = testing, offset = log(testing$Duration)) %>% rowSums %>% mean
+```
+
+Moreover, an _estimated_ ELPD with an estimated standard error is actually better than
+a _calculated_ ELPD in the testing data, because the calculated value in the testing
+data could easily have been somewhat different had the observations that were randomly
+put into the testing data turned out differently. The estimated standard error in the
+estimated ELPD from the previous subproblem gives us a sense of the possible magnitude
+of the effect of randomizing observations into training and testing.
+
+However, for the negative binomial model, the _calculated_ ELPD over the $N$ observations 
+in the `testing` data differs from the _estimated_ ELPD based on the $N$ observations in the 
+`training` data because the assumptions of the ELPD estimator were grossly violated by the
+many points that have an outsized influence on the posterior distribution. Nevertheless,
+the negative binomial model predicts much worse in this case than does the Poisson model.
+
+## Claim Models
+
+```{r, prior_gamma, cache = TRUE, results = "hide"}
+prior_gamma <- stan_glm(AMT_Claim / NB_Claim ~ Insured.age + Insured.sex + Credit.score + 
+                          Car.age + Marital + Pct.drive.wkend +
+                          `Pct.drive.rush am` + `Pct.drive.rush pm`,
+                          data = training, family = Gamma(link = "log"), subset = AMT_Claim > 0,
+                          prior_intercept = normal(location = 9, scale = 2),
+                          prior = normal(location = 0, scale = 0.5, autoscale = TRUE),
+                          QR = TRUE, seed = 20220411, prior_PD = TRUE, iter = 1000)
+```
+
+```{r, post_gamma, cache = TRUE, results = "hide", warning = FALSE, dependson="prior_gamma"}
+post_gamma <- update(prior_gamma, prior_PD = FALSE)
+```
+
+```{r, wkend, cache = TRUE, dependson = "post_gamma"}
+nd <- training
+nd$Pct.drive.wkend <- 0
+mu_0 <- posterior_epred(post_gamma, newdata = nd)
+nd$Pct.drive.wkend <- 1
+mu_1 <- posterior_epred(post_gamma, newdata = nd)
+mu_diff <- mu_1 - mu_0
+summary(c(mu_diff))
+```
+
+Thus, a person who only drives on weekends is expected to have
+an average claim that is \$491 higher than a person who only
+drives on weekdays, but there is more than a one-quarter probability
+that the direction is negative. Consequently, the best answer is
+that we do not know with much certainty about whether weekend or
+weekday drivers have more costly accidents.
+
+## Premiums
+
+The posterior predictive distribution of the previous subproblem could be used to estimate
+the expected damage of a claim. In other words, it would be a conditional expectation
+given that there is a claim. It does not consider the probability that a claim will
+happen, which would be necessary to calculate the marginal expectated damage of a policyholder.
