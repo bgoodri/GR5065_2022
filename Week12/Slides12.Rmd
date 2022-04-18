@@ -1,0 +1,357 @@
+---
+title: "Models with Ordinal Variables Using the brms R Package"
+author: "Ben Goodrich"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{amssymb}
+   - \usepackage{color}
+output:
+  ioslides_presentation:
+    widescreen: yes
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+</style>
+
+```{r setup, include=FALSE}
+options(width = 90)
+options(mc.cores = parallel::detectCores())
+library(knitr)
+library(knitr)
+hook_output <- knit_hooks$get("output")
+knit_hooks$set(output = function(x, options) {
+  lines <- options$output.lines
+  if (is.null(lines)) {
+    return(hook_output(x, options))  # pass to default hook
+  }
+  x <- unlist(strsplit(x, "\n"))
+  more <- "..."
+  if (length(lines)==1) {        # first n lines
+    if (length(x) > lines) {
+      # truncate the output, but add ....
+      x <- c(head(x, lines), more)
+    }
+  } else {
+    x <- c(more, x[lines], more)
+  }
+  # paste these lines together
+  x <- paste(c(x, ""), collapse = "\n")
+  hook_output(x, options)
+})
+knit_hooks$set(small.mar = function(before, options, envir) {
+    if (before) par(mar = c(4, 4, .1, .1), las = 1)  # smaller margin on top and right
+})
+library(brms)
+```
+
+## Distributions of Different Random Variables
+
+> - $\alpha$ and each $\beta_k$ have a posterior (or prior) distribution
+  in a regression model
+> - Let $\eta_n = \alpha + \sum_{k = 1}^K \beta_k x_{nk}$. The `posterior_linpred`
+  function produces draws of each $\eta_n$ induced by the posterior distribution
+  of $\alpha$ and each $\beta_k$
+> - In a GLM, $\mu_n = g\left(\eta_n\right)$. The `posterior_epred` function
+  produces draws of each $\mu_n$ induced by the posterior distribution of $\eta_n$
+> - The P{D,M}F of the outcome is $f\left(y_n \mid \mu_n, \dots\right)$. The
+  `posterior_predict` function produces draws of each $y_n$ induced by the
+  posterior distribution of $\mu_n$ whose P{D,M}F is 
+  $f\left(y_n \mid \mu_n, \dots\right)$
+> - But $y_n$ is not conditionally deterministic given $\mu_n$ because it
+  includes noise, whose posterior distribution may be governed by other
+  parameters like $\sigma$
+> - In the case of a logit model, $\eta_n \in \mathbb{R}$,
+  $\mu_n = \frac{1}{1 + e^{-\eta_n}} \in \left(0,1\right)$, and
+  $y_n \in \{0,1\}$
+
+## Censored Observations (with a spline)
+
+```{r}
+data(kidney, package = "brms")
+head(kidney)
+```
+```{r, kidney_prior, cache = TRUE, results = "hide", message = FALSE}
+prior <- brm(time | cens(censored) ~ s(age, by = sex) + disease,
+             data = kidney, family = lognormal(), sample_prior = "only",
+             prior = prior(normal(0, 2), class = "b") +
+               prior(normal(-15, 3), class = "Intercept") + 
+               prior(exponential(0.1), class = "sigma"))
+```
+
+## Checking the Prior Predictive Distribution
+
+```{r}
+prior_PD <- posterior_predict(prior)
+dim(prior_PD)
+summary(colMeans(prior_PD))
+```
+
+> - This is terrible but happens a lot when researchers increase the
+  complexity of their models without increasing the amount of effort
+  they put into choosing good priors on the parameters
+
+## Results of the Right Censored Model
+
+```{r, kidney_post, cache = TRUE, results = "hide", message = FALSE, dependson = "kidney_prior"}
+post <- update(prior, sample_prior = "no", control = list(adapt_delta = 0.99))
+```
+```{r, output.lines = -(1:7)}
+post
+```
+
+## Plot of $\mu_n$ versus $age_n$
+
+```{r}
+plot(conditional_effects(post, effects = "age:sex"))
+```
+
+## Warnings You Should Be Aware Of
+
+1. Divergent Transitions: This means the tuned stepsize ended up too big relative
+  to the curvature of the log-kernel. Increase `adapt_delta` above its default value
+  (usually $0.8$) and / or use more informative priors
+2. Hitting the maximum treedepth: This means the tuned stepsize ended up so small
+  that it could not get all the way around the parameter space in one iteration.
+  Increase `max_treedepth` beyond its default value of $10$ but each increment
+  will double the wall time, so only do so if you hit the max a lot
+3. Bulk / Tail Effective Sample Size too low: This means the tuned stepsize ended up 
+  so small that adjacent draws have too much dependence. Increase the number of
+  iterations or chains
+4. $\widehat{R} > 1.01$: This means the chains have not converged. You could try
+  running the chains longer, but there is probably a deeper problem.
+5. Low Bayesian Fraction of Information: This means that you posterior distribution
+  has really extreme tails. You could try running the chains longer, but there is 
+  probably a deeper problem.
+
+## Data-Generating Process for Interval Outcomes
+
+$$\alpha \thicksim ??? \\
+  \forall k: \beta_k \thicksim ??? \\
+  \forall n: \mu_n \equiv \alpha + \sum_{k = 1}^K \beta_k x_{nk} \\
+  \sigma \thicksim ??? \\
+  \forall n: \epsilon_n \thicksim \mathcal{N}\left(0,\sigma\right) \\
+  \forall n: y_n^\ast \equiv \mu_n + \epsilon_n \\
+  y_n \equiv \sum_{j = 1}^{J - 1} \mathbb{I}\{y_n^\ast > z_j\}$$
+
+Each $z_j$ is a KNOWN cutpoint, such as in "Is your family income between \$0 and \$20,000, 
+\$20,000 and \$50,000, \$50,000 and \$100,000, \$100,000 and \$200,000, or more than \$200,000?"
+
+## Log-Likelihood for Interval Outcomes
+
+$$\ell\left(\alpha, \beta_1, \dots, \beta_K, \sigma\right) = 
+\sum_{n = 1}^N \ln \Pr\left(y_n \mid \alpha, \beta_1, \dots, \beta_K, \sigma\right) = \\
+\sum_{n = 1}^N \ln \left(F\left(z_{y_n} \mid \mu_n, \sigma\right) - 
+F\left(z_{y_n - 1} \mid \mu_n, \sigma\right)\right)$$
+
+where $F$ is the normal CDF (but could easily be another CDF).
+
+```{r, eval = FALSE}
+brm(z[y - 1]  | cens("interval", z[y]) ~ x1 + ... xk, 
+    data = dataset, family = gaussian, prior = ???)
+```
+
+## Data-Generating Process for Ordinal Outcomes
+
+<div class="columns-2">
+$$\forall k: \beta_k \thicksim ??? \\
+  \forall n: \eta_n \equiv \sum_{k = 1}^K \beta_k x_{nk} \\
+  \forall n: \epsilon_n \thicksim \mathcal{N}\left(0,1\right) \\
+  \forall n: y_n^\ast \equiv \eta_n + \epsilon_n \\
+  \zeta_1 \equiv -\infty \\
+  \forall j > 1: \zeta_j \thicksim ??? \\
+  y_n \equiv \sum_{j = 1}^{J - 1} \mathbb{I}\{y_n^\ast > \zeta_j\}$$
+
+* Each $\zeta_j$ is a UNKNOWN cutpoint (if $j > 1$), such as in "Do you approve, neither approve 
+nor disapprove, or disapprove of the job Joe Biden is doing as President?" to estimate
+* $\alpha \equiv 0$ because you could shift $\alpha$ by any constant & shift each $\zeta_j$ by
+  the same constant without affecting $y_n$
+* $\sigma \equiv 1$ because you could scale each $y_n^\ast$ by any positive constant & scale each 
+  $\zeta_j$ by the same constant without affecting $y_n$, i.e. only RELATIVE values of $y_n^\ast$ 
+  matter
+</div>
+
+## Likelihood for an Ordered Observation
+
+* Likelihood for an observation is just categorical: $\mathcal{L}\left(\beta, \boldsymbol{\zeta};y\right) \propto\prod_{j=1}^{J}\Pr\left(\left.y=j\right|\beta, \boldsymbol{\zeta}\right)$
+* If $F\left(\right)$ is in the location-scale family (normal, logistic,
+etc.), then $F\left(\beta x +\epsilon\leq\zeta_{j}\right)=F_{0,1}\left(\zeta_{j}-\beta x\right)$,
+where $F_{0,1}\left(\right)$ is the "standard" version of the CDF
+* $\Pr\left(\left.y=j\right|\beta, \boldsymbol{\zeta}\right) = 
+   F\left(\beta x +\epsilon\leq\zeta_{j}\right) -
+   F\left(\beta x +\epsilon\leq\zeta_{j - 1}\right)$
+
+> - Bernoulli is a special case with only two categories
+
+## Graphs of Standard Normal Utility with Cutpoints
+
+```{r, echo = FALSE, small.mar = TRUE}
+p <- ppoints(1000)
+x <- qnorm(p)
+par(mar = c(4, 4, .1, .1), las = 1, mfcol = 1:2)
+plot(x, dnorm(x), type = "l", xlab = "Utility", ylab = "Density")
+cutpoints <- x[c(100, 200, 400, 700)]
+segments(x0 = cutpoints, y0 = 0, y1 = dnorm(cutpoints), 
+         col = "red", lty = "dashed")
+plot(x, pnorm(x), type = "l", xlab = "Utility", ylab = "Cumulative Density")
+segments(x0 = cutpoints, y0 = 0, y1 = pnorm(cutpoints),
+         col = "red", lty = "dashed")
+segments(x0 = -10, y0 = pnorm(cutpoints), x1 = cutpoints,
+         col = "red", lty = "dashed")
+
+```
+
+## Estimating an Ordinal Model with `stan_polr`
+
+```{r, polr, cache = TRUE, results = "hide", message = FALSE, warning = FALSE}
+library(rstanarm); options(mc.cores = parallel::detectCores())
+data("inhaler", package = "brms")
+inhaler$rating <- as.ordered(inhaler$rating)
+post <- stan_polr(rating ~ treat + period + carry, data = inhaler, 
+                  method = "probit", prior = R2(0.25), seed = 12345)
+```
+* Now we can estimate the causal effect of `treat` on utility for `rating`:
+```{r}
+nd <- inhaler; nd$treat <- 1
+y1_star <- posterior_linpred(post, newdata = nd)
+nd$treat <- 0
+y0_star <- posterior_linpred(post, newdata = nd)
+summary(c(y1_star - y0_star))
+```
+
+## Results of `rstanarm::stan_polr`
+
+```{r, output.lines = c(5:16)}
+print(post, digits = 2)
+```
+
+## Dirichlet Distribution
+
+- Dirichlet distribution is over the parameter space of PMFs --- i.e. $\pi_k \geq 0$ and 
+  $\sum_{k = 1}^K \pi_k = 1$ --- and the Dirichlet PDF is
+$f\left(\boldsymbol{\pi} \mid \boldsymbol{\alpha}\right) = \frac{1}{B\left(\boldsymbol{\alpha}\right)}\prod_{k=1}^{K}\pi_{k}^{\alpha_{k}-1}$
+where $\alpha_{k}\geq0\,\forall k$ and the multivariate Beta
+function is $B\left(\boldsymbol{\alpha}\right)=\frac{\prod_{k=1}^{K}\Gamma\left(\alpha_{k}\right)}{\Gamma\left(\prod_{k=1}^{K}\alpha_{k}\right)}$
+where $\Gamma\left(z\right)= \frac{1}{z} \prod_{n = 1}^\infty \frac{\left(1 + \frac{1}{n}\right)^n}
+{1 + \frac{z}{n}} = \int_{0}^{\infty}u^{z-1}e^{-u}du$ is the Gamma function
+- $\mathbb{E}\pi_{i}=\frac{\alpha_{i}}{\sum_{k=1}^{K}\alpha_{k}}\,\forall i$
+and the mode of $\pi_{i}$ is $\frac{\alpha_{i}-1}{-1+\sum_{k=1}^{K}\alpha_{k}}$
+if $\alpha_{i}>1$
+- Iff $\alpha_{k}=1\,\forall k$, $f\left(\left.\boldsymbol{\pi}\right|\boldsymbol{\alpha}=\mathbf{1}\right)$
+is constant over $\Theta$ (simplexes)
+- Beta distribution is a special case of the Dirichlet where $K = 2$
+- Marginal and conditional distributions for subsets of $\boldsymbol{\pi}$ are also Dirichlet
+
+## Priors on Cutpoints
+
+- `stan_polr` puts a Dirichlet prior (by default, with $\alpha_k = 1\forall k$)
+  on the probability a unit with average predictors would have $y_k$ as its outcome
+- The cutpoints, $\boldsymbol{\zeta}$, are derived from this by inverting the 
+  inverse link function. In R, it would look like
+```{r}
+simplex <- MCMCpack::rdirichlet(n = 1, alpha = rep(1, 5)); rbind(simplex, cumsum(simplex))
+(zeta <- qnorm(cumsum(simplex)))
+```
+
+> - However, `brms::brm` does something quite different, by default
+
+## Similar Model with `brms::brm`
+
+* `brm` can estimate similar models, but with priors on the coefficients
+```{r, brm1, cache = TRUE, results = "hide", message = FALSE, warning = FALSE}
+post <- brm(rating ~ treat + period + carry, data = inhaler, 
+            family = cumulative(link = "probit"),
+            prior = prior("logistic(0, 1)", class = "b"))
+```
+```{r, output.lines = -c(1:6)}
+post # Intercept[j] corresponds to cutpoint[j] from stan_polr
+```
+
+## Can use `loo` (if you had multiple models)
+
+```{r}
+loo(post)
+```
+
+## Data-Generating Process with Ordinal Predictors
+
+<div class="columns-2">
+$$\alpha \thicksim ??? \\
+  \forall k: \beta_k \thicksim ??? \\
+  \theta_1, \dots , \theta_{J - 1} \thicksim Dir \left(a_1, \dots , a_{J - 1}\right) \\
+  \gamma \thicksim ??? \\
+  \forall n: \mu_n \equiv \alpha + \sum_{k = 1}^K \beta_k x_{nk} + \\
+  J \gamma \sum_{j = 1}^{c_n - 1} \theta_j \\
+  \sigma \thicksim ??? \\
+  \forall n: \epsilon_n \thicksim \mathcal{N}\left(0,\sigma\right) \\
+  \forall n: y_n \equiv \mu_n + \epsilon_n$$
+
+* Each $c_n$ is a KNOWN category, such as in "Is your family income between \$0 and \$20,000, 
+\$20,000 and \$50,000, \$50,000 and \$100,000, \$100,000 and \$200,000, or more than \$200,000?"
+* $\gamma$ can be interpreted as the average effect of going up one more category
+* Since $0 \leq \sum_{j = 1}^{c_n - 1} \theta_j \leq 1$, the sum is the fraction of $J\gamma$
+  of going from lowest category to $c_n$
+</div>
+
+## Ordinal Predictors in Polling
+
+```{r, warning = FALSE, message = FALSE}
+poll <- readRDS("GooglePoll.rds") # WantToWin is coded as 1 for Romney and 0 for Obama
+library(dplyr)
+collapsed <- filter(poll, !is.na(WantToWin)) %>%
+             group_by(Region, Gender, Urban_Density, Age, Income) %>%
+             summarize(Romney = sum(grepl("Romney", WantToWin)), Obama = n() - Romney) %>%
+             na.omit
+```
+```{r, president, cache = TRUE, results = "hide", warning = FALSE, message = FALSE}
+post <- brm(Romney | trials(Romney + Obama) ~ Region + Gender + Urban_Density + 
+              # Age and Income are restricted to have monotonic effects
+              mo(Age) + mo(Income), data = collapsed, family = binomial(link = "logit"),
+            prior = prior("logistic(0,1)", class = "b"))
+
+```
+* For more examples, see
+  https://cran.r-project.org/package=brms/vignettes/brms_monotonic.html
+
+## Results of Model with Ordinal Predictors {.smaller}
+
+```{r, output.lines = -c(1:8), echo = FALSE}
+post
+```
+
+## Effect of Age Plot
+
+```{r, message = FALSE}
+plot(conditional_effects(post, effects = "Age")) # vertical axis is in log-odds
+```
+
+## Effect of Income Plot
+
+```{r, message = FALSE}
+plot(conditional_effects(post, effects = "Income")) # forced monotonic but maybe wrong?
+```
+
+## Try It without the Restriction on Income
+
+```{r, president2, cache = TRUE, results = "hide", warning = FALSE, message = FALSE}
+post2 <- brm(Romney | trials(Romney + Obama) ~ Region + Gender + Urban_Density + 
+              mo(Age) + Income, data = collapsed, family = binomial(link = "logit"),
+            prior = prior("logistic(0,1)", class = "b"))
+```
+```{r}
+post <- add_criterion(post, criterion = "loo")
+post2 <- add_criterion(post2, criterion = "loo")
+loo_compare(post, post2)
+```
+
+## Income Does Not Have Much of an Effect (here)
+
+```{r, message = FALSE}
+plot(conditional_effects(post2, effects = "Income"))
+```
+
