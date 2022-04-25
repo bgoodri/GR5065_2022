@@ -1,0 +1,303 @@
+---
+title: "Matrix Algebra and Multivariate Probability"
+author: "Ben Goodrich"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+params:
+  IN_CLASS: !r TRUE
+#runtime: shiny
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{amssymb}
+   - \usepackage{color}
+output:
+  ioslides_presentation:
+    widescreen: yes
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+</style>
+
+```{r setup, include=FALSE}
+library(knitr)
+options(mc.cores = 4L)
+```
+
+## Vectors and Transposition
+
+- A vector will be written in lowercase boldface, like $\mathbf{x}$
+- A (column) vector of size $K$ is given by
+$$\begin{eqnarray*}
+\mathbf{x} & = & \begin{bmatrix}x_{1}\\
+x_{2}\\
+\vdots\\
+x_{K}
+\end{bmatrix}
+\end{eqnarray*}$$
+- The transpose operator $\left(\top\right)$ changes a column vector
+into a row vector and vice versa
+$$\begin{eqnarray*}
+\mathbf{x}^{\top} & = & \begin{bmatrix}x_{1} & x_{2} & \cdots & x_{K}\end{bmatrix}
+\end{eqnarray*}$$
+- Unless otherwise indicated, vectors are column vectors
+
+## Matrices and Transposition
+
+- Matrices are collections of (row) vectors of the same size and are written in capital boldface letters like $\mathbf{X}$,
+where the first index pertains to the row
+$$\begin{eqnarray*}
+\mathbf{X} & = & \begin{bmatrix}x_{11} & x_{12} & \cdots & x_{1P}\\
+x_{21} & x_{22} & \cdots & x_{2P}\\
+\vdots & \vdots & \cdots & \vdots\\
+x_{K1} & x_{K2} & \cdots & x_{KP}
+\end{bmatrix}
+\end{eqnarray*}$$
+- $\mathbf{x}_{p}=\begin{bmatrix}x_{1p}\\
+x_{2p}\\
+\vdots\\
+x_{Kp}
+\end{bmatrix}$ is the $p$th column of $\mathbf{X}$
+- $\mathbf{x}_{k}^{\top}=\begin{bmatrix}x_{k1} & x_{k2} & \cdots & x_{kP}\end{bmatrix}$
+is the $k$th row of $\mathbf{X}$
+
+## Things that Are Easy
+
+- Multiplying or dividing a vector or matrix by a scalar, $a$; just multiply or divide each element of the
+  vector or matrix by $a$ to create a new vector or matrix
+- Adding or subtracting two vectors or matrices of the same size
+- Subtracting or adding a scalar from or to a vector or matrix, which is defined as 
+  $\mathbf{y} = \mathbf{x} + a \equiv \mathbf{x} + a \begin{bmatrix} 1 & 1 & \dots & 1\end{bmatrix}^\top$
+- Elementwise multiplication or division of two vectors or matrices of the same size; just multiply or
+  divide each element on the left by the corresponding element on the right to form a new vector or matrix
+  of the same size. In Stan, these elementwise operators start with a period, e.g. `.*` and `./`
+
+## Vector Multiplication
+
+- If $\mathbf{x}$ and $\mathbf{y}$ are both vectors of size $K$
+$$\begin{eqnarray*}
+\mathbf{x}^{\top}\mathbf{y} & = & \begin{bmatrix}x_{1} & x_{2} & \cdots & x_{K}\end{bmatrix}\begin{bmatrix}y_{1}\\
+y_{2}\\
+\vdots\\
+y_{K}
+\end{bmatrix}\equiv\sum_{k=1}^{K}x_{k}y_{k}
+\end{eqnarray*}$$
+- Called the dot product, inner product, vector product, etc.
+- In R, do `t(x) %*% y` or equivalently `crossprod(x,y)`
+- Common construction: $\mathbf{x}^{\top}\mathbf{x}=\sum_{k=1}^{K}x_{k}^{2}$
+- The length (not size) of a $K$-vector $\mathbf{x}$ is $\sqrt{\mathbf{x}^{\top}\mathbf{x}}$, which is 
+  confusing because `length(x)` in R returns its size, $K$. Better to use `NROW`.
+
+## Matrix Multiplication {.smaller}
+
+- If $\mathbf{X}$ is $K\times M$ and $\mathbf{Y}$ is $M\times P$,
+then $\mathbf{Z}=\mathbf{X}\mathbf{Y}$ is a $K\times P$ matrix such
+that for all $k$ and $p$: $Z_{kp}=\mathbf{x}_{k}^{\top}\mathbf{y}_{p}=\sum_{m=1}^{M}x_{km}y_{mp}$
+$$\begin{eqnarray*}
+\mathbf{Z}=\mathbf{X}\mathbf{Y} & = & \begin{bmatrix}\mathbf{x}_{1}^{\top}\mathbf{y}_{1} & \mathbf{x}_{1}^{\top}\mathbf{y}_{2} & \cdots & \mathbf{x}_{1}^{\top}\mathbf{y}_{P}\\
+\mathbf{x}_{2}^{\top}\mathbf{y}_{1} & \mathbf{x}_{2}^{\top}\mathbf{y}_{2} & \cdots & \mathbf{x}_{2}^{\top}\mathbf{y}_{P}\\
+\vdots & \vdots & \cdots & \vdots\\
+\mathbf{x}_{K}^{\top}\mathbf{y}_{1} & \mathbf{x}_{K}^{\top}\mathbf{y}_{2} & \cdots & \mathbf{x}_{K}^{\top}\mathbf{y}_{P}
+\end{bmatrix}
+\end{eqnarray*}$$
+- Matrix multiplication is not commutative but $\left(\mathbf{X}\mathbf{Y}\right)^{\top}=\mathbf{Y}^{\top}\mathbf{X}^{\top}$,
+  i.e. a column vector
+- Common construction: If $\mathbf{X}$ is $N\times K$ and
+$\boldsymbol{\beta}$ is $K\times1$\vspace{-0.2in}
+$$\begin{eqnarray*}
+\mathbf{X}\boldsymbol{\beta} & = & \begin{bmatrix}\mathbf{x}_{1}^{\top}\boldsymbol{\beta}\\
+\mathbf{x}_{2}^{\top}\boldsymbol{\beta}\\
+\vdots\\
+\mathbf{x}_{N}^{\top}\boldsymbol{\beta}
+\end{bmatrix}=\begin{bmatrix}\sum_{k=1}^{K}x_{1k}\beta_{k}\\
+\sum_{k=1}^{K}x_{2k}\beta_{k}\\
+\vdots\\
+\sum_{k=1}^{K}x_{Nk}\beta_{k}
+\end{bmatrix}=\begin{bmatrix}x_{11}\beta_{1}+x_{12}\beta_{2}+\cdots+x_{1K}\beta_{K}\\
+x_{21}\beta_{1}+x_{22}\beta_{2}+\cdots+x_{2K}\beta_{K}\\
+\vdots\\
+x_{N1}\beta_{1}+x_{N2}\beta_{2}+\cdots+x_{NK}\beta_{K}
+\end{bmatrix}
+= \boldsymbol{\eta}
+\end{eqnarray*}$$
+
+## Multivariate CDFs, PDFs, and Expectations {.smaller}
+
+- If $\mathbf{x}$ is a $K$-vector of continuous random variables
+$$\begin{eqnarray*}
+F\left(\mathbf{x}\right) & = & \Pr\left(X_{1}\leq x_{1}\bigcap X_{2}\leq x_{2}\bigcap\cdots\bigcap X_{K}\leq x_{K}\right)\\
+f\left(\mathbf{x}\right) & = & \frac{\partial^{K}F\left(\mathbf{x}\right)}{\partial x_{1}\partial x_{2}\cdots\partial x_{K}}=f_1\left(x_{1}\right)\prod_{k=2}^{K}f_k\left(\left.x_{k}\right|x_{1},\ldots,x_{k-1}\right)\\
+F\left(\mathbf{x}\right) & = & \int_{-\infty}^{x_{k}}\cdots\int_{-\infty}^{x_{2}}\int_{-\infty}^{x_{1}}f\left(\mathbf{x}\right)dx_{1}dx_{2}\cdots dx_{K}
+\end{eqnarray*}$$
+$$\begin{eqnarray*}
+\mathbb{E}g\left(\mathbf{x}\right) & = & \int_{-\infty}^{\infty}\cdots\int_{-\infty}^{\infty}\int_{-\infty}^{\infty}g\left(\mathbf{x}\right)f_{\mathbf{x}}\left(\mathbf{x}\right)dx_{1}dx_{2}\cdots dx_{K}\\
+\boldsymbol{\mu}^{\top} & = & \mathbb{E}\mathbf{x}^{\top}=\begin{bmatrix}\mathbb{E}X_{1} & \mathbb{E}X_{2} & \cdots & \mathbb{E}X_{K}\end{bmatrix}\\
+\boldsymbol{\Sigma}^{\top}=\boldsymbol{\Sigma} & = & \mathbb{E}\left[\left(\mathbf{x}-\boldsymbol{\mu}\right)\left(\mathbf{x}-\boldsymbol{\mu}\right)^{\top}\right]=\begin{bmatrix}\sigma_{1}^{2} & \sigma_{12} & \cdots & \sigma_{1K}\\
+\sigma_{12} & \sigma_{2}^{2} & \cdots & \vdots\\
+\vdots & \cdots & \ddots & \sigma_{\left(K-1\right)K}\\
+\sigma_{1K} & \cdots & \sigma_{\left(K-1\right)K} & \sigma_{K}^{2}
+\end{bmatrix}
+\end{eqnarray*}$$
+
+## Special Matrices
+
+- A square matrix has the same number of rows as columns
+- A square matrix $\mathbf{X}$ is symmetric iff $\mathbf{X}=\mathbf{X}^{\top}$
+- Triangular matrices
+    - Lower triangular square matrix has $X_{kp}=0\,\forall k<p$
+    - Upper triangular square matrix has $X_{kp}=0\,\forall k>p$
+- Diagonal matrix is a square matrix that is simultaneously lower and
+upper triangular and thus has $X_{kp}=0\,\forall k\neq p$
+- The identity matrix, $\mathbf{I}$, is the diagonal matrix with only
+ones on its diagonal --- i.e.  $I_{kp}=\begin{cases}
+1 & \mbox{if }k=p\\
+0 & \mbox{if }k\neq p
+\end{cases}$ --- and is the matrix analogue of the scalar $1$
+- If $\mathbf{X}$ is square, then $\mathbf{X}\mathbf{I}=\mathbf{X}=\mathbf{I}\mathbf{X}$
+- An orthogonal matrix $\mathbf{Q}$ is such that $\mathbf{Q}^\top \mathbf{Q} = \mathbf{I} = \mathbf{Q} \mathbf{Q}^\top$
+- A zero vector / matrix is a vector / matrix with $0$ in each cell
+
+## Matrix Inversion
+
+
+- If $\mathbf{X}$ is $K\times K$, then the inverse of $\mathbf{X}$
+--- if it exists --- is denoted $\mathbf{X}^{-1}$ and is the unique
+$K\times K$ matrix such that $\begin{eqnarray*}
+\mathbf{X}\mathbf{X}^{-1}= & \mathbf{I} & =\mathbf{X}^{-1}\mathbf{X}
+\end{eqnarray*}$
+- Don't worry about how R finds the elements of $\mathbf{X}^{-1}$, just use `solve`
+    - If $\mathbf{X}$ is diagonal, then $\left[\mathbf{X}^{-1}\right]_{kp}=\begin{cases}
+\frac{1}{X_{kp}} & \mbox{if }k=p\\
+0 & \mbox{if }k\neq p
+\end{cases}$
+    - If $\mathbf{X}$ is only triangular, $\mathbf{X}^{-1}$ is also triangular and easy to find
+- There is no vector or matrix "division" but multiplying $\mathbf{X}$ by $\mathbf{X}^{-1}$
+is the matrix analogue of scalar multiplying $a$ by $\frac{1}{a}$.
+Also, $\left(\mathbf{X}a\right)^{-1}=\frac{1}{a}\mathbf{X}^{-1}$.
+- An inverse of a product of square matrices equals the product of the
+inverses in reverse order: $\left(\mathbf{X}\mathbf{Y}\right)^{-1}=\mathbf{Y}^{-1}\mathbf{X}^{-1}$. Also, 
+the inverse of a transpose of a square matrix is the transpose of the
+inverse: $\left(\mathbf{X}^{\top}\right)^{-1}=\left(\mathbf{X}^{-1}\right)^{\top}$
+
+## Matrix Factorization
+
+- How many ways can $24$ be factored over the positive integers?
+
+    1. $1 \times 24$
+    2. $2 \times 12$
+    3. $3 \times 8$
+    4. $4 \times 6$
+    5. $2^3 \times 3$
+
+> - Matrices can be factored into the product of two (or more) special matrices, and
+    the restrictions on the special matrices can make the factorization unique
+  
+> - An example is the QR factorization $\underbrace{\mathbf{X}}_{N \times K} = 
+  \underbrace{\mathbf{Q}}_{N \times K} \underbrace{\mathbf{R}}_{K \times K}$,
+  where $\mathbf{Q}^\top \mathbf{Q} = \mathbf{I}$ and $\mathbf{R}$ is upper
+  triangular with non-negative diagonal elements
+  
+## What Does `QR = TRUE` Do?
+
+- Let the vector of linear predictions in a GLM be $\boldsymbol{\eta} = \mathbf{X} \boldsymbol{\beta}$
+- If we apply the QR decomposition to $\mathbf{X}$, 
+  $$\boldsymbol{\eta} = \overbrace{\mathbf{Q}\mathbf{R}}^\mathbf{X} \boldsymbol{\beta} = 
+  \overbrace{\mathbf{Q} \frac{R_{KK}}{R_{KK}}\mathbf{R}}^\mathbf{X}\boldsymbol{\beta} =
+  \overbrace{\mathbf{Q}^\ast\mathbf{R}^\ast}^\mathbf{X} \boldsymbol{\beta} =
+  \mathbf{Q}^\ast \overbrace{\boldsymbol{\theta}}^{\mathbf{R}^\ast\boldsymbol{\beta}}$$
+- When you specify `QR = TRUE` in `stan_glm` (or use `stan_lm` or `stan_polr`), rstanarm internally does a
+  GLM using $\mathbf{Q}^\ast = \mathbf{Q} R_{KK}$ as the matrix of predictors instead of $\mathbf{X}$ to get 
+  the posterior distribution of $\boldsymbol{\theta}$ and then pre-multiplies each posterior draw of
+  $\boldsymbol{\theta}$ by $\frac{1}{R_{KK}} \mathbf{R}^{-1}$ to get a posterior draw of $\boldsymbol{\beta}$
+- Doing so makes it easier for NUTS to sample from the posterior distribution 
+  (of $\boldsymbol{\theta}$) efficiently because the columns of $\mathbf{Q}$ are orthogonal, whereas the 
+  columns of $\mathbf{X}$ are not
+
+## Determinants
+
+- A determinant is "like" a multivariate version of the absolute
+value operation and is denoted with the same symbol, $\left|\mathbf{X}\right|$
+- Iff $\left|\mathbf{X}\right|\neq0$, then $\mathbf{X}^{-1}$ exists
+and $\left|\mathbf{X}^{-1}\right|=\frac{1}{\left|\mathbf{X}\right|}$
+- Statisticians mostly worry about determinants of triangular (inclusive of a diagonal) matrices and
+  the determinant of a triangular matrix is the product of its diagonal entries,
+  so $\left|\mathbf{R}\right|=\prod_{k=1}^{K}R_{kk}$
+- Determinant of a product of square matrices is the product of their determinants
+- $\left|\mathbf{X}\right| = \left|\mathbf{Q}\right| \left|\mathbf{R}\right|$.
+  Since $\mathbf{Q}^\top \mathbf{Q} = \mathbf{I}$ and $\left|\mathbf{I}\right| = 1$, 
+  $\left|\mathbf{Q}\right| = \mp 1$. Thus, 
+  $\left|\mathbf{X}\right| = \mp \left|\mathbf{R}\right|$.
+
+## Covariance and Correlation Matrices
+
+- Recall that if $g\left(X_{1},X_{2}\right)=\left(X_{1}-\mu_{1}\right)\left(X_{2}-\mu_{2}\right)$, then
+\vspace{-0.2in}
+$$\begin{eqnarray*}
+\mathbb{E}g\left(X_{1},X_{2}\right) & = & \int_{\Omega_{X_{2}}}\int_{\Omega_{X_{1}}}\left(x_{1}-\mu_{1}\right)\left(x_{2}-\mu_{2}\right)
+f\left(x_{1},x_{2}\right)dx_{1}dx_{2}=\sigma_{12}
+\end{eqnarray*}$$
+
+is the covariance between $X_{1}$ and $X_{2}$, while $\rho_{12}=\frac{\sigma_{12}}{\sigma_{1}\sigma_{2}}\in\left[-1,1\right]$
+is their correlation, which is a measure of LINEAR dependence
+
+- Let $\boldsymbol{\Sigma}$ and $\boldsymbol{\Lambda}$  be $K\times K$, such that
+$\Sigma_{ij}=\sigma_{ij}\,\forall i,j$ and $\Lambda_{ij} = \rho_{ij}\,\forall i\neq j$
+    - Since $\sigma_{ij}=\sigma_{ji}\,\forall i,j$, $\boldsymbol{\Sigma}=\boldsymbol{\Sigma}^{\top}$ is symmetric
+    - Since $\sigma_{ij}=\sigma_{i}^{2}$ iff $i=j$, $\Sigma_{ii}=\sigma_{i}^{2}>0$
+    - Hence, $\boldsymbol{\Sigma}$ is called the variance-covariance matrix of $\mathbf{x}$
+    - $\boldsymbol{\Sigma}=\boldsymbol{\Delta}\boldsymbol{\Lambda}\boldsymbol{\Delta}$
+where $\Delta_{ij}=\begin{cases}
+\sigma_{i} & \mbox{if }i=j\\
+0 & \mbox{if }i\neq j
+\end{cases}$ is a diagonal matrix
+
+## Cholesky Factors and Positive Definiteness
+
+- Let $\mathbf{L}$ be lower triangular w/ positive diagonal entries
+such that $\mathbf{L}\mathbf{L}^{\top}=\boldsymbol{\Sigma}$, which is a 
+Cholesky factor of $\boldsymbol{\Sigma}$ and can uniquely be defined via recursion:
+$$\begin{eqnarray*}
+L_{ij} & = & \begin{cases}
+\sqrt[+]{\Sigma_{jj}-\sum_{k=1}^{j-1}L_{kj}^{2}} & \mbox{if }i=j\\
+\frac{1}{L_{jj}}\left(\Sigma_{ij}-\sum_{k=1}^{j-1}L_{ik}L_{jk}\right) & \mbox{if }i>j\\
+0 & \mbox{if }i<j
+\end{cases}
+\end{eqnarray*}$$
+- Positive definiteness of $\boldsymbol{\Sigma}$ implies $L_{jj}$
+is real and positive for all $j$ and implies the existence of $\boldsymbol{\Sigma}^{-1}=\mathbf{L}^{-1}\left(\mathbf{L}^{-1}\right)^{\top}$,
+which is called a "precision matrix". But not all symmetric matrices
+are positive definite, so $\Theta\subset\mathbb{R}^{K+{K \choose 2}}$ in this case
+- A Cholesky factor is "like" a square root of a positive definite matrix
+- The `chol` function in R outputs $\mathbf{L}^{\top}$ instead
+
+## Properties of the Multi(variate) Normal
+
+- Univariate and bivariate normal are special cases where $K = 1$ and $K = 2$
+- All margins of a multivariate normal distribution are multivariate normal
+- All conditional distributions derived from a multivariate normal are
+  multivariate normal
+- A multivariate normal distribution stays in the multivariate normal family
+  under shift, scale, and rotation transformations
+
+> - You are often going to have to estimate $\boldsymbol{\Sigma}$
+
+## The LKJ Distribution for Correlation Matrices
+
+- Let $\boldsymbol{\Delta}$ be a $K\times K$ diagonal matrix such
+that $\Delta_{kk}$ is the $k$-th standard deviation, $\sigma_{k}$,
+and let $\boldsymbol{\Lambda}$ be a correlation matrix
+- Formulating a prior for $\boldsymbol{\Sigma}=\boldsymbol{\Delta}\boldsymbol{\Lambda}\boldsymbol{\Delta}$
+is harder than putting a prior on $\boldsymbol{\Delta}$ & $\boldsymbol{\Lambda}$
+- LKJ PDF is $f\left(\left.\boldsymbol{\Lambda}\right|\eta\right)=\frac{1}{c\left(K,\eta\right)}\left|\boldsymbol{\Lambda}\right|^{\eta-1}=\left|\mathbf{L}\right|^{2\left(\eta-1\right)}$
+where $\boldsymbol{\Lambda}=\mathbf{L}\mathbf{L}^{\top}$ with $\mathbf{L}$
+a Cholesky factor and $c\left(K,\eta\right)$ is the normalizing constant
+that forces the PDF to integrate to $1$ over the space of correlation matrices
+    - Iff $\eta=1$, $f\left(\left.\boldsymbol{\Lambda}\right|\eta\right)=\frac{1}{c\left(K,\eta\right)}$ is constant
+    - If $\eta>1$, the mode of $f\left(\left.\boldsymbol{\Lambda}\right|\eta\right)$ is at $\mathbf{I}$ and as $\eta\uparrow\infty$, $\boldsymbol{\Lambda}\rightarrow\mathbf{I}$
+    - If $0<\eta<1$, trough of $f\left(\left.\boldsymbol{\Lambda}\right|\eta\right)$ is at $\mathbf{I}$, which is 
+    an odd thing to believe
+- Can also derive the distribution of the Cholesky factor $\mathbf{L}$ such that $\mathbf{L}\mathbf{L}^\top$ is
+  a correlation matrix with an LKJ$\left(\eta\right)$ distribution
