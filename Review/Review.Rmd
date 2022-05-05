@@ -1,0 +1,224 @@
+---
+title: "Review"
+author: "Ben Goodrich"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+autosize: true
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{amssymb}
+   - \usepackage{color}
+output:
+  ioslides_presentation:
+    widescreen: yes
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+slides > slide:not(.nobackground):after {
+  content: '';
+}
+blockquote {
+  background: #f9f9f9;
+  border-left: 5px solid #ccc;
+  margin: 1.5em 10px;
+  padding: 0.5em 1.5em;
+}
+</style>
+
+```{r setup, include=FALSE}
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+
+## Final Exam
+
+* Final exam is Monday, May 9th, from 4:10PM to 7PM in IAB 403
+- If you are not permitted on campus, let me know ASAP
+- Make sure all of your R packages are working correctly
+- You can use anything on Canvas, Ed Discussion, etc.
+- Do not be overly concerned with how much time it will take
+  to draw from posterior distributions because having long
+  runtimes does not make for a good exam
+
+## What Is Bayesian Analysis?
+
+- Inputs: Prior predictive distribution and data
+- Output: Draws from posterior distribution or functions thereof
+- Bayes' Rule prescribes the updating of beliefs but is trivial
+- Provides the expected utility that is critical to decision theory
+
+> - Fisher / Frequentism objects to beliefs having a role in science
+> - Supervised learning objects to probability being a prerequisite for
+  (prediction with) quantitative modeling
+> - You cannot get a probability distribution of beliefs about the
+  unknowns given the knowns from Frequentism or supervised learning
+> - The five sources of uncertainty appear on the next slide
+
+## {.build}
+
+1. Uncertainty about parameters in models
+2. Uncertainty about which model is best
+3. Uncertainty about what to do with the output of the (best) model(s)
+4. Uncertainty about whether the software works as intended
+5. Uncertainty about whether the (best) model(s) hold with other data
+
+Topic | Frequentist     | Bayesian            | Supervised Learning
+----- | --------------- | ------------------- | -------------------
+1     | Non-existent    | Posterior           | Completely ignored
+2     | Test down       | ELPD, stacking      | One-shot cross-validation
+3     | Convention      | Decision theory     | Different conventions
+4     | Non-existent    | Stan warnings       | Not much
+5     | Random sampling | Poststratification  | Testing split from training
+
+## Metaphors
+
+> - What lessons did you learn from considering whether $x = 1 + 10^{100000000}$ is prime?
+> - What lessons did you learn from bowling?
+> - What lessons did you learn from the poker hand between Selbst and Baumann?
+
+## Other Homeworks
+
+> - HW1: What lessons did you learn from the surnames question?
+> - HW2: What lessons did you learn from the GDP vs. GDI issue?
+> - HW3: What lessons did you learn from the Oregon Medicaid experiment?
+> - HW4: What lessons did you learn from municipal election turnout in France?
+> - HW4: What lessons did you learn from variation in minimum wages across states?
+> - HW5: What lessons did you learn about labor force participation?
+> - HW5: What lessons did you learn about auto insurance premuims?
+> - HW6: What lessons did you learn from modeling an ordinal survey outcome?
+> - HW6: What lessons did you learn from the experience of Amy Cuddy?
+
+## Proportion of Voters Supporting Trump in Florida
+
+- What proportion $\left(\mu\right)$ of Florida voters will vote for Trump vs. Biden in 2024?
+
+> - Freqentist: If you tell me $\mu$ and $N$, I can tell you (objectively) that the distribution
+  of $\widehat{\mu}$ across polls of size $N$ is asymptotically normal with expectation $\mu$
+  and standard deviation $\sqrt{\frac{\mu \left(1 - \mu\right)}{N}}$
+> - Bayesian: If you tell me what you believe about $\mu$ before conducting 1 poll of size $N$,
+  I can tell you what you should (subjectively) believe about $\mu$ afterward
+> - Supervised learning: If you give me all tweets mentioning Trump or Biden from Florida IP
+  addresses, I can classify them as pro or anti
+
+## Submodel Selection
+
+- Should I include $x$ as a predictor of $y$?
+
+> - Freqentist: Test the null hypothesis that $\beta = 0$ against the alternative hypothesis that
+  $\beta \neq 0$. Iff you reject the null, include $x$
+> - Bayesian: Yes, if it is justified by your DAG. That way your posterior uncertainty about $\beta$ 
+  is preserved in the analysis, but you could use projpred to see if you could get away with excluding
+  $x$ while still propagating the uncertainty about $\beta$
+> - Supervised Learning: Use a penalty function that is not differentiable at zero, 
+  such as L1 or elastic net, and keep $x$ iff $\widehat{\beta} \neq 0$
+
+## Regularization
+
+- Should I "regularize" the estimates?
+
+> - Freqentist: No, because it messes up the finite-sample distribution of the point estimator 
+  across datasets conditional on the true parameter, so you cannot control the Type I error
+  rate
+> - Bayesian: Yes, because unregularized posterior estimates stem from improper prior
+  distributions
+> - Supervised Learning: Yes, but you only have to worry about the influence of the penalty function
+  on the optimum
+
+## Nonlinearity in Data-Generating Processes
+
+- What if the data-generating process is not a GLM?
+
+> - Freqentist: Estimating the parameters of a non-linear function is fine as long as you 
+  condition on the true nonlinear functional form
+> - Bayesian: Put a prior on the unknown non-linear function that reflects your
+  beliefs about it before seeing the data, although you have to believe it is
+  continuous in order to have any hope of estimating it with a spline or Gaussian process
+> - Supervised Learning: Use random forests, neural networks, etc. that allow you
+  to learn the nonlinear function without assuming (much of) anything about it
+
+## Heterogeneity in Data-Generating Processes
+
+- What if the data-generating process is not a homogenous GLM?
+
+> - Frequentist: The big units would change in every replication of a cluster-sampling
+  design so integrate any unknown that is specific to a big unit out of the likelihood
+> - Bayesian: Condition on which big unit each small unit is a member of, specify
+  priors on the degree of heterogeneity in the data-generating processes across big
+  units, and draw from the joint posterior distribution of all the unknowns conditional
+  on the dataset you have
+> - Supervised Learning: Include interaction terms between the big group indicators
+  and the predictors and use a penalty function that is not differentiable at zero
+
+## Using Non-representative Data
+
+> - Freqentist: Use weights that are the reciprocal of the probability that an observation
+  appears in a sample so that the estimator is consistent across datasets that could be
+  collected
+> - Bayesian: Weight the posterior predictions by the proportion of the population that each
+  big unit comprises
+> - Supervised Learning: Collect data on the entire population of interest
+
+## Missingness
+
+- What if some of the data are missing?
+
+> - Frequentist: Integrate those values out of the likelihood function to obtain a new
+  likelihood function (which is often impossible analytically) that can be maximized by 
+  choosing parameter values
+> - Bayesian: Draw from the joint distribution of the unknown data and the parameter
+  values conditional on the known data (although rstanarm does not support this)
+> - Supervised Learning: Use a neural network to predict the missing values
+
+## Problems with Applied Research
+
+- Flip through the latest issue of a journal in your field that regularly publishes
+  quantitative articles
+  
+    - How many articles provide any justification for their choice to use Frequentist
+      estimation techniques? Likely none, especially for finite $N$
+    - How many avail themselves of the convention that if the null hypothesis is
+      rejected, then proceed as if $\widehat{\boldsymbol{\theta}} = \boldsymbol{\theta}$?
+    - How many push $\widehat{\boldsymbol{\theta}}$ through a non-linear function,
+      $g$, and interpret $g\left(\widehat{\boldsymbol{\theta}}\right)$?
+    - How many say something about the estimated standard errors, $p$-values, and / or
+      confidence intervals that would only make sense if referring to a multivariate
+      normal posterior distribution?
+
+> - Most applied research consists of trying to draw Bayesian conclusions from non-Bayesian
+  methods despite genuine Bayesian methods being available for their problem
+
+## On Medians
+
+- Conditional on a prior predictive distribution and data, MCMC gives fairly 
+  exact estimates of posterior medians, the number such that there
+  is an equal chance that $\theta$ is below or above that number
+- A posterior median is the optimal point estimator under absolute error loss  
+- MLEs and penalized MLEs are neither medians, means, modes, or anything other
+  than the value of $\boldsymbol{\theta}$ that optimizes a function
+- It is not an admissible Frequentist statement to say "$\theta$ probably is \dots",
+  including "$\theta$ probably is probably positive" or "$\theta$ is greater than
+  $\widehat{\theta}$ with probability $0.5$"
+- But since applied researchers that use Frequentist methods have no basis for
+  saying whether $\theta > \widehat{\theta}$ or $\theta < \widehat{\theta}$ they
+  presume both are equally probable, thereby making $\widehat{\theta}$ into a
+  "median"
+  
+## On Expectations
+
+- Most applied researchers have no conception of how to average a function
+  and can only average points
+- And yet, all the justifications for using Frequentist methods hinge on
+  averaging a point estimator over the data-generating process, conditional on
+  the unknown $\boldsymbol{\theta}$
+- An expectation with respect to the posterior PDF is the optimal point estimator 
+  under squared error loss
+- Supervised learning averages a loss function over the points in the testing
+  data using the $\widehat{\boldsymbol{\theta}}$ that was found from the
+  training dataset
+- That is not an average over $\boldsymbol{\theta}$ or even an average over
+  training datasets but rather an average conditional on a training dataset
+- ELPD averages the logarithm of the JOINT density of $N$ future observations
+  over the posterior distribution
+
